@@ -2,7 +2,7 @@
 //  fluxApp.swift
 //  flux
 //
-//  Created by 查俊宇 on 2026/8/9.
+//  Created by Junyu Zha on 2026/8/9.
 //
 
 import SwiftUI
@@ -10,9 +10,10 @@ import SwiftData
 
 @main
 struct fluxApp: App {
-    var sharedModelContainer: ModelContainer = {
+    private let sharedModelContainer: ModelContainer = {
         let schema = Schema([
-            Item.self,
+            Feed.self,
+            Article.self,
         ])
         let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
 
@@ -23,9 +24,12 @@ struct fluxApp: App {
         }
     }()
 
+    @State private var feedStore = FeedStore()
+
     var body: some Scene {
         WindowGroup {
             ContentView()
+                .environment(feedStore)
         }
         .modelContainer(sharedModelContainer)
     }

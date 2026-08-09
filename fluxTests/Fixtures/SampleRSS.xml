@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:content="http://purl.org/rss/1.0/modules/content/">
+  <channel>
+    <title>Tech &amp; Design</title>
+    <link>https://example.com</link>
+    <description>Example RSS feed</description>
+    <item>
+      <title>First &amp; Best</title>
+      <link>https://example.com/story-one#comments</link>
+      <pubDate>Sun, 09 Aug 2026 12:00:00 GMT</pubDate>
+      <content:encoded><![CDATA[<p>Hello <strong>world</strong> &amp; friends.</p><p>Second paragraph.</p>]]></content:encoded>
+    </item>
+    <item>
+      <title>Entry without a usable link</title>
+      <description>This entry must be skipped.</description>
+    </item>
+  </channel>
+</rss>

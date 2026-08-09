@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title>Atom Notes</title>
+  <id>https://example.com/atom</id>
+  <updated>2026-08-09T10:00:00Z</updated>
+  <entry>
+    <title>Native SwiftUI</title>
+    <id>tag:example.com,2026:swiftui</id>
+    <link rel="alternate" href="/atom-entry" />
+    <published>2026-08-08T08:30:00Z</published>
+    <updated>2026-08-08T09:00:00Z</updated>
+    <content type="html">&lt;p&gt;Adaptive &lt;em&gt;interfaces&lt;/em&gt;.&lt;/p&gt;</content>
+  </entry>
+</feed>

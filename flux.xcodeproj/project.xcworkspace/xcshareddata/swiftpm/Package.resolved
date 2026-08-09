@@ -1,0 +1,15 @@
+{
+  "originHash" : "78d29d5cf162d0a7adb360af569c32c9a7a9ce65590a72c423e5139c0df909dd",
+  "pins" : [
+    {
+      "identity" : "feedkit",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/nmdias/FeedKit.git",
+      "state" : {
+        "revision" : "e55b2cafaf67370092c91193cfb8a8b008e05888",
+        "version" : "10.4.0"
+      }
+    }
+  ],
+  "version" : 3
+}
