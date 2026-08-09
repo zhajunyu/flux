@@ -25,7 +25,13 @@ struct AddFeedView: View {
         NavigationStack {
             Form {
                 Section {
-                    TextField("https://example.com/feed", text: $urlInput)
+                    TextField(
+                        "Feed URL", 
+                        text: $urlInput,
+                        prompt: Text(verbatim: "https://example.com/feed")
+                            .foregroundColor(.gray)
+                    )
+                        .tint(.gray)
                         .keyboardType(.URL)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
