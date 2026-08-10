@@ -12,6 +12,7 @@ struct ContentView: View {
     private enum AppTab: Hashable {
         case timeline
         case feeds
+        case settings
     }
 
     private enum SheetDestination: String, Identifiable {
@@ -23,6 +24,12 @@ struct ContentView: View {
     @Environment(FeedStore.self) private var feedStore
     @Environment(\.modelContext) private var modelContext
     @Query(filter: #Predicate<Article> { !$0.isRead }) private var unreadArticles: [Article]
+
+    @AppStorage(AppPreferenceKey.appearance)
+    private var appearance = AppAppearance.system.rawValue
+
+    @AppStorage(AppPreferenceKey.refreshFeedsOnLaunch)
+    private var refreshFeedsOnLaunch = true
 
     @State private var selectedTab: AppTab = .timeline
     @State private var presentedSheet: SheetDestination?
@@ -41,8 +48,15 @@ struct ContentView: View {
                     FeedManagementView(onAddFeed: presentAddFeed)
                 }
             }
+
+            Tab("Settings", systemImage: "gearshape", value: .settings) {
+                NavigationStack {
+                    SettingsView()
+                }
+            }
         }
         .tabViewStyle(.sidebarAdaptable)
+        .preferredColorScheme(selectedAppearance.colorScheme)
         .sheet(item: $presentedSheet) { destination in
             switch destination {
             case .addFeed:
@@ -57,8 +71,14 @@ struct ContentView: View {
             )
         }
         .task {
-            await feedStore.refreshOnceAfterLaunch(modelContext: modelContext)
+            if refreshFeedsOnLaunch {
+                await feedStore.refreshOnceAfterLaunch(modelContext: modelContext)
+            }
         }
+    }
+
+    private var selectedAppearance: AppAppearance {
+        AppAppearance(rawValue: appearance) ?? .system
     }
 
     private var noticeBinding: Binding<UserNotice?> {
