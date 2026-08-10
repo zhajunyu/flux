@@ -47,13 +47,17 @@ struct AddFeedView: View {
 
                 if let parsedFeed {
                     Section("Detected Feed") {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text(parsedFeed.title)
-                                .font(.headline)
-                            Text(parsedFeed.sourceURL.host ?? parsedFeed.sourceURL.absoluteString)
-                                .font(.subheadline)
-                                .foregroundStyle(.secondary)
-                                .lineLimit(1)
+                        HStack(spacing: 12) {
+                            FeedIconView(url: parsedFeed.iconURL, size: 42, cornerRadius: 11)
+
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text(parsedFeed.title)
+                                    .font(.headline)
+                                Text(parsedFeed.sourceURL.host ?? parsedFeed.sourceURL.absoluteString)
+                                    .font(.subheadline)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                            }
                         }
                         .padding(.vertical, 4)
 

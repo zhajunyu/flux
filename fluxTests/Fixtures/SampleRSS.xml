@@ -4,6 +4,11 @@
     <title>Tech &amp; Design</title>
     <link>https://example.com</link>
     <description>Example RSS feed</description>
+    <image>
+      <url>/images/rss-icon.png</url>
+      <title>Tech &amp; Design</title>
+      <link>https://example.com</link>
+    </image>
     <item>
       <title>First &amp; Best</title>
       <link>https://example.com/story-one#comments</link>

@@ -138,6 +138,7 @@ final class FeedStore {
         let feed = Feed(
             title: parsedFeed.title,
             url: parsedFeed.sourceURL.absoluteString,
+            iconURL: parsedFeed.iconURL?.absoluteString,
             lastFetched: parsedFeed.fetchedAt
         )
         modelContext.insert(feed)
@@ -174,16 +175,19 @@ final class FeedStore {
         }
     }
 
-    func delete(_ feed: Feed, modelContext: ModelContext) {
+    @discardableResult
+    func delete(_ feed: Feed, modelContext: ModelContext) -> Bool {
         modelContext.delete(feed)
         do {
             try modelContext.save()
+            return true
         } catch {
             modelContext.rollback()
             notice = UserNotice(
                 title: "Couldn’t Delete Feed",
                 message: "The subscription and its cached articles could not be deleted."
             )
+            return false
         }
     }
 
@@ -203,6 +207,9 @@ final class FeedStore {
     private func merge(_ parsedFeed: ParsedFeed, into feed: Feed, modelContext: ModelContext) {
         feed.title = parsedFeed.title
         feed.url = parsedFeed.sourceURL.absoluteString
+        if let iconURL = parsedFeed.iconURL {
+            feed.iconURL = iconURL.absoluteString
+        }
 
         var articlesByLink = Dictionary(uniqueKeysWithValues: feed.articles.map { ($0.link, $0) })
         for parsedArticle in uniqueArticles(from: parsedFeed.articles) {

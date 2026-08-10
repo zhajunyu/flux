@@ -31,12 +31,16 @@ struct FeedManagementView: View {
             } else {
                 List {
                     ForEach(feeds) { feed in
-                        FeedRowView(feed: feed)
-                            .swipeActions {
-                                Button("Delete", systemImage: "trash", role: .destructive) {
-                                    pendingDeletion = feed
-                                }
+                        NavigationLink {
+                            FeedDetailView(feed: feed)
+                        } label: {
+                            FeedRowView(feed: feed)
+                        }
+                        .swipeActions {
+                            Button("Delete", systemImage: "trash", role: .destructive) {
+                                pendingDeletion = feed
                             }
+                        }
                     }
                 }
                 .listStyle(.insetGrouped)
@@ -94,52 +98,20 @@ struct FeedManagementView: View {
 private struct FeedRowView: View {
     let feed: Feed
 
-    private var unreadCount: Int {
-        feed.articles.lazy.filter { !$0.isRead }.count
-    }
-
-    private var host: String {
-        URL(string: feed.url)?.host ?? feed.url
-    }
-
     var body: some View {
         HStack(spacing: 14) {
-            Image(systemName: "dot.radiowaves.left.and.right")
-                .font(.title3)
-                .foregroundStyle(.tint)
-                .frame(width: 34, height: 34)
-                .background(.tint.opacity(0.12), in: .rect(cornerRadius: 9))
-                .accessibilityHidden(true)
+            FeedIconView(
+                url: feed.iconURL.flatMap(URL.init(string:)),
+                size: 34,
+                cornerRadius: 9
+            )
 
-            VStack(alignment: .leading, spacing: 5) {
-                Text(feed.title)
-                    .font(.headline)
-                    .lineLimit(2)
-
-                Text(host)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-
-                HStack(spacing: 5) {
-                    Text("\(feed.articles.count) articles")
-                    if unreadCount > 0 {
-                        Text("•")
-                            .accessibilityHidden(true)
-                        Text("\(unreadCount) unread")
-                    }
-                    if let lastFetched = feed.lastFetched {
-                        Text("•")
-                            .accessibilityHidden(true)
-                        Text("Updated \(lastFetched, style: .relative)")
-                    }
-                }
-                .font(.caption)
-                .foregroundStyle(.tertiary)
-                .lineLimit(1)
-            }
+            Text(feed.title)
+                .font(.headline)
+                .lineLimit(2)
         }
-        .padding(.vertical, 5)
+        .padding(.vertical, 7)
+        .contentShape(.rect)
         .accessibilityElement(children: .combine)
     }
 }

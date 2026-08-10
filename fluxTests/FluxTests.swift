@@ -21,6 +21,7 @@ final class FluxTests: XCTestCase {
 
         XCTAssertEqual(parsed.format, .rss)
         XCTAssertEqual(parsed.title, "Tech & Design")
+        XCTAssertEqual(parsed.iconURL?.absoluteString, "https://example.com/images/rss-icon.png")
         XCTAssertEqual(parsed.articles.count, 1)
         XCTAssertEqual(parsed.articles[0].title, "First & Best")
         XCTAssertEqual(parsed.articles[0].link, "https://example.com/story-one")
@@ -37,6 +38,7 @@ final class FluxTests: XCTestCase {
 
         XCTAssertEqual(parsed.format, .atom)
         XCTAssertEqual(parsed.title, "Atom Notes")
+        XCTAssertEqual(parsed.iconURL?.absoluteString, "https://example.com/images/atom-icon.png")
         XCTAssertEqual(parsed.articles.count, 1)
         XCTAssertEqual(parsed.articles[0].link, "https://example.com/atom-entry")
         XCTAssertEqual(parsed.articles[0].content, "Adaptive interfaces.")
@@ -50,6 +52,7 @@ final class FluxTests: XCTestCase {
 
         XCTAssertEqual(parsed.format, .json)
         XCTAssertEqual(parsed.title, "JSON Journal")
+        XCTAssertEqual(parsed.iconURL?.absoluteString, "https://example.com/images/json-icon.png")
         XCTAssertEqual(parsed.articles.count, 1)
         XCTAssertEqual(parsed.articles[0].title, "JSON & HTML")
         XCTAssertEqual(parsed.articles[0].content, "Readable JSON Feed content.")
@@ -77,6 +80,7 @@ final class FluxTests: XCTestCase {
         let initial = ParsedFeed(
             title: "Example Feed",
             sourceURL: feedURL,
+            iconURL: try XCTUnwrap(URL(string: "https://example.com/icon-v1.png")),
             format: .rss,
             fetchedAt: firstFetch,
             articles: [
@@ -106,6 +110,7 @@ final class FluxTests: XCTestCase {
         let updated = ParsedFeed(
             title: "Renamed Feed",
             sourceURL: feedURL,
+            iconURL: try XCTUnwrap(URL(string: "https://example.com/icon-v2.png")),
             format: .rss,
             fetchedAt: secondFetch,
             articles: [
@@ -132,6 +137,7 @@ final class FluxTests: XCTestCase {
         )
         XCTAssertEqual(feeds.count, 1)
         XCTAssertEqual(feeds[0].title, "Renamed Feed")
+        XCTAssertEqual(feeds[0].iconURL, "https://example.com/icon-v2.png")
         XCTAssertEqual(feeds[0].lastFetched, secondFetch)
         XCTAssertEqual(articles.count, 2)
 

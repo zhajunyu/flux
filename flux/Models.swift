@@ -13,6 +13,7 @@ final class Feed {
     @Attribute(.unique) var id: UUID
     var title: String
     var url: String
+    var iconURL: String?
     var lastFetched: Date?
 
     @Relationship(deleteRule: .cascade, inverse: \Article.feed)
@@ -22,12 +23,14 @@ final class Feed {
         id: UUID = UUID(),
         title: String,
         url: String,
+        iconURL: String? = nil,
         lastFetched: Date? = nil,
         articles: [Article] = []
     ) {
         self.id = id
         self.title = title
         self.url = url
+        self.iconURL = iconURL
         self.lastFetched = lastFetched
         self.articles = articles
     }

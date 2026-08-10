@@ -3,6 +3,7 @@
   "title": "JSON Journal",
   "home_page_url": "https://example.com",
   "feed_url": "https://example.com/feed.json",
+  "icon": "/images/json-icon.png",
   "items": [
     {
       "id": "entry-1",

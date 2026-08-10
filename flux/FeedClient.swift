@@ -19,9 +19,26 @@ struct ParsedFeed: Sendable, Equatable {
 
     let title: String
     let sourceURL: URL
+    let iconURL: URL?
     let format: Format
     let fetchedAt: Date
     let articles: [ParsedArticle]
+
+    init(
+        title: String,
+        sourceURL: URL,
+        iconURL: URL? = nil,
+        format: Format,
+        fetchedAt: Date,
+        articles: [ParsedArticle]
+    ) {
+        self.title = title
+        self.sourceURL = sourceURL
+        self.iconURL = iconURL
+        self.format = format
+        self.fetchedAt = fetchedAt
+        self.articles = articles
+    }
 }
 
 struct ParsedArticle: Sendable, Equatable {
@@ -155,6 +172,10 @@ enum URLNormalizer {
     }
 
     static func articleLink(from rawValue: String?, relativeTo sourceURL: URL) -> String? {
+        resourceURL(from: rawValue, relativeTo: sourceURL)?.absoluteString
+    }
+
+    static func resourceURL(from rawValue: String?, relativeTo sourceURL: URL) -> URL? {
         guard let rawValue else { return nil }
         let trimmed = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty,
@@ -162,7 +183,19 @@ enum URLNormalizer {
         else {
             return nil
         }
-        return canonicalString(resolved)
+        return canonicalURL(resolved)
+    }
+
+    static func faviconURL(from website: String?, relativeTo sourceURL: URL) -> URL? {
+        let websiteURL = resourceURL(from: website, relativeTo: sourceURL) ?? sourceURL
+        guard var components = URLComponents(url: websiteURL, resolvingAgainstBaseURL: false) else {
+            return nil
+        }
+
+        components.path = "/favicon.ico"
+        components.query = nil
+        components.fragment = nil
+        return components.url.flatMap(canonicalURL)
     }
 }
 
@@ -190,6 +223,10 @@ enum FeedDocumentParser {
         let title = HTMLTextExtractor.singleLine(channel?.title)
             ?? sourceURL.host
             ?? "Untitled Feed"
+        let iconURL = URLNormalizer.resourceURL(
+            from: channel?.image?.url,
+            relativeTo: sourceURL
+        ) ?? URLNormalizer.faviconURL(from: channel?.link, relativeTo: sourceURL)
         let articles = (channel?.items ?? []).compactMap { item -> ParsedArticle? in
             guard let link = URLNormalizer.articleLink(from: item.link, relativeTo: sourceURL) else {
                 return nil
@@ -206,6 +243,7 @@ enum FeedDocumentParser {
         return ParsedFeed(
             title: title,
             sourceURL: sourceURL,
+            iconURL: iconURL,
             format: .rss,
             fetchedAt: fetchedAt,
             articles: articles
@@ -216,6 +254,14 @@ enum FeedDocumentParser {
         let title = HTMLTextExtractor.singleLine(atom.title?.text)
             ?? sourceURL.host
             ?? "Untitled Feed"
+        let website = atom.links?.first(where: {
+            guard let relation = $0.attributes?.rel?.lowercased() else { return true }
+            return relation == "alternate"
+        })?.attributes?.href
+        let iconURL = URLNormalizer.resourceURL(
+            from: atom.icon ?? atom.logo,
+            relativeTo: sourceURL
+        ) ?? URLNormalizer.faviconURL(from: website, relativeTo: sourceURL)
         let articles = (atom.entries ?? []).compactMap { entry -> ParsedArticle? in
             let preferredLink = entry.links?.first(where: {
                 guard let relation = $0.attributes?.rel?.lowercased() else { return true }
@@ -240,6 +286,7 @@ enum FeedDocumentParser {
         return ParsedFeed(
             title: title,
             sourceURL: sourceURL,
+            iconURL: iconURL,
             format: .atom,
             fetchedAt: fetchedAt,
             articles: articles
@@ -250,6 +297,10 @@ enum FeedDocumentParser {
         let title = HTMLTextExtractor.singleLine(json.title)
             ?? sourceURL.host
             ?? "Untitled Feed"
+        let iconURL = URLNormalizer.resourceURL(
+            from: json.icon ?? json.favicon,
+            relativeTo: sourceURL
+        ) ?? URLNormalizer.faviconURL(from: json.homePageURL, relativeTo: sourceURL)
         let articles = (json.items ?? []).compactMap { item -> ParsedArticle? in
             guard let link = URLNormalizer.articleLink(
                 from: item.url ?? item.externalURL,
@@ -269,6 +320,7 @@ enum FeedDocumentParser {
         return ParsedFeed(
             title: title,
             sourceURL: sourceURL,
+            iconURL: iconURL,
             format: .json,
             fetchedAt: fetchedAt,
             articles: articles
