@@ -1,23 +1,27 @@
 //
-//  TimelineView.swift
+//  FeedArticlesView.swift
 //  flux
 //
-//  Created by Junyu Zha on 2026/8/9.
+//  Created by Codex on 2026/8/10.
 //
 
 import SwiftData
 import SwiftUI
 
-struct TimelineView: View {
+struct FeedArticlesView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(FeedStore.self) private var feedStore
-    @Query(sort: \Article.publishedAt, order: .reverse) private var articles: [Article]
-    @Query private var feeds: [Feed]
 
     @State private var isEditing = false
     @State private var selectedArticleIDs: Set<UUID> = []
 
-    let onAddFeed: () -> Void
+    let feed: Feed
+
+    private var articles: [Article] {
+        feed.articles.sorted { lhs, rhs in
+            lhs.publishedAt > rhs.publishedAt
+        }
+    }
 
     var body: some View {
         Group {
@@ -27,9 +31,18 @@ struct TimelineView: View {
                 articleList
             }
         }
-        .navigationTitle("Timeline")
+        .navigationTitle(feed.title)
         .toolbar {
-            ToolbarItem(placement: .primaryAction) {
+            ToolbarItemGroup(placement: .primaryAction) {
+                if !isEditing {
+                    NavigationLink {
+                        FeedDetailView(feed: feed)
+                    } label: {
+                        Label("Feed Details", systemImage: "info.circle")
+                    }
+                    .accessibilityHint("Shows subscription information and feed controls")
+                }
+
                 Button(action: toggleEditing) {
                     Image(systemName: isEditing ? "checkmark" : "pencil")
                 }
@@ -77,7 +90,8 @@ struct TimelineView: View {
                     } label: {
                         ArticleRowView(
                             article: article,
-                            selectionState: selectedArticleIDs.contains(article.id)
+                            selectionState: selectedArticleIDs.contains(article.id),
+                            showsFeedTitle: false
                         )
                     }
                     .buttonStyle(.plain)
@@ -90,13 +104,14 @@ struct TimelineView: View {
                     NavigationLink {
                         ArticleDetailView(article: article)
                     } label: {
-                        ArticleRowView(article: article)
+                        ArticleRowView(article: article, showsFeedTitle: false)
                     }
                     .swipeActions(edge: .leading, allowsFullSwipe: true) {
                         readToggleButton(for: article)
                     }
                     .contextMenu {
                         readToggleButton(for: article)
+
                         if let articleURL = URL(string: article.link) {
                             Link(destination: articleURL) {
                                 Label("Open in Safari", systemImage: "safari")
@@ -114,35 +129,23 @@ struct TimelineView: View {
 
     private var emptyState: some View {
         ContentUnavailableView {
-            Label(
-                feeds.isEmpty ? "No Feeds Yet" : "No Articles Yet",
-                systemImage: feeds.isEmpty ? "dot.radiowaves.left.and.right" : "newspaper"
-            )
+            Label("No Articles Yet", systemImage: "newspaper")
         } description: {
-            Text(
-                feeds.isEmpty
-                    ? "Subscribe to a feed to build your timeline."
-                    : "Refresh to check your subscriptions for new articles."
-            )
+            Text("Refresh to check this subscription for new articles.")
         } actions: {
-            if feeds.isEmpty {
-                Button("Add Feed", action: onAddFeed)
-                    .buttonStyle(.borderedProminent)
-            } else {
-                Button {
-                    Task {
-                        await feedStore.refreshAll(modelContext: modelContext)
-                    }
-                } label: {
-                    if feedStore.isRefreshing {
-                        ProgressView()
-                    } else {
-                        Text("Refresh")
-                    }
+            Button {
+                Task {
+                    await feedStore.refreshAll(modelContext: modelContext)
                 }
-                .buttonStyle(.borderedProminent)
-                .disabled(feedStore.isRefreshing)
+            } label: {
+                if feedStore.isRefreshing {
+                    ProgressView()
+                } else {
+                    Text("Refresh")
+                }
             }
+            .buttonStyle(.borderedProminent)
+            .disabled(feedStore.isRefreshing)
         }
     }
 

@@ -32,7 +32,7 @@ struct FeedManagementView: View {
                 List {
                     ForEach(feeds) { feed in
                         NavigationLink {
-                            FeedDetailView(feed: feed)
+                            FeedArticlesView(feed: feed)
                         } label: {
                             FeedRowView(feed: feed)
                         }
