@@ -17,6 +17,7 @@ struct ContentView: View {
 
     private enum SheetDestination: String, Identifiable {
         case addFeed
+        case addCategory
 
         var id: String { rawValue }
     }
@@ -45,7 +46,10 @@ struct ContentView: View {
 
             Tab("Feeds", systemImage: "dot.radiowaves.left.and.right", value: .feeds) {
                 NavigationStack {
-                    FeedManagementView(onAddFeed: presentAddFeed)
+                    FeedManagementView(
+                        onAddFeed: presentAddFeed,
+                        onAddCategory: presentAddCategory
+                    )
                 }
             }
 
@@ -61,6 +65,8 @@ struct ContentView: View {
             switch destination {
             case .addFeed:
                 AddFeedView()
+            case .addCategory:
+                AddCategoryView()
             }
         }
         .alert(item: noticeBinding) { notice in
@@ -91,10 +97,14 @@ struct ContentView: View {
     private func presentAddFeed() {
         presentedSheet = .addFeed
     }
+
+    private func presentAddCategory() {
+        presentedSheet = .addCategory
+    }
 }
 
 #Preview("Empty Library") {
     ContentView()
         .environment(FeedStore(client: .preview))
-        .modelContainer(for: [Feed.self, Article.self], inMemory: true)
+        .modelContainer(for: [Feed.self, FeedCategory.self, Article.self], inMemory: true)
 }

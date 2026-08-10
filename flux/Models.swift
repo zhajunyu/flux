@@ -15,6 +15,7 @@ final class Feed {
     var url: String
     var iconURL: String?
     var lastFetched: Date?
+    var category: FeedCategory?
 
     @Relationship(deleteRule: .cascade, inverse: \Article.feed)
     var articles: [Article]
@@ -25,6 +26,7 @@ final class Feed {
         url: String,
         iconURL: String? = nil,
         lastFetched: Date? = nil,
+        category: FeedCategory? = nil,
         articles: [Article] = []
     ) {
         self.id = id
@@ -32,7 +34,27 @@ final class Feed {
         self.url = url
         self.iconURL = iconURL
         self.lastFetched = lastFetched
+        self.category = category
         self.articles = articles
+    }
+}
+
+@Model
+final class FeedCategory {
+    @Attribute(.unique) var id: UUID
+    var name: String
+
+    @Relationship(deleteRule: .nullify, inverse: \Feed.category)
+    var feeds: [Feed]
+
+    init(
+        id: UUID = UUID(),
+        name: String,
+        feeds: [Feed] = []
+    ) {
+        self.id = id
+        self.name = name
+        self.feeds = feeds
     }
 }
 

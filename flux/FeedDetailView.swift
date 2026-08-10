@@ -12,6 +12,7 @@ struct FeedDetailView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
     @Environment(FeedStore.self) private var feedStore
+    @Query(sort: \FeedCategory.name) private var categories: [FeedCategory]
 
     @State private var isConfirmingDeletion = false
 
@@ -111,6 +112,26 @@ struct FeedDetailView: View {
             Divider()
                 .padding(.leading, 46)
 
+            HStack(alignment: .firstTextBaseline, spacing: 12) {
+                Image(systemName: "folder")
+                    .font(.body.weight(.medium))
+                    .foregroundStyle(.tint)
+                    .frame(width: 24)
+                    .accessibilityHidden(true)
+
+                Text("Category")
+
+                Spacer(minLength: 18)
+
+                categoryPicker
+            }
+            .font(.body)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 15)
+
+            Divider()
+                .padding(.leading, 46)
+
             StackedDetailRow(
                 title: "Last Updated",
                 value: lastUpdatedText,
@@ -150,6 +171,34 @@ struct FeedDetailView: View {
             date: .abbreviated,
             time: .shortened
         )
+    }
+
+    private var categorySelection: Binding<UUID?> {
+        Binding(
+            get: { feed.category?.id },
+            set: { selectedID in
+                let category = categories.first { $0.id == selectedID }
+                feedStore.assign(feed, to: category, modelContext: modelContext)
+            }
+        )
+    }
+
+    private var categoryPicker: some View {
+        Picker("Category", selection: categorySelection) {
+            Text("Uncategorized")
+                .tag(UUID?.none)
+
+            ForEach(categories) { category in
+                Text(category.name)
+                    .tag(Optional(category.id))
+            }
+        }
+        .labelsHidden()
+        .pickerStyle(.menu)
+        .buttonStyle(.plain)
+        .tint(.accentColor)
+        .fixedSize()
+        .accessibilityLabel("Feed category")
     }
 
     private func deleteFeed() {

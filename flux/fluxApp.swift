@@ -13,6 +13,7 @@ struct fluxApp: App {
     private let sharedModelContainer: ModelContainer = {
         let schema = Schema([
             Feed.self,
+            FeedCategory.self,
             Article.self,
         ])
         let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)

@@ -15,6 +15,20 @@ struct UserNotice: Identifiable, Equatable {
     let message: String
 }
 
+enum FeedCategoryError: LocalizedError, Equatable {
+    case emptyName
+    case duplicateName
+
+    var errorDescription: String? {
+        switch self {
+        case .emptyName:
+            "Enter a name for the category."
+        case .duplicateName:
+            "A category with this name already exists."
+        }
+    }
+}
+
 @MainActor
 @Observable
 final class FeedStore {
@@ -172,6 +186,66 @@ final class FeedStore {
                 title: "Couldn’t Update Article",
                 message: "The read status could not be saved."
             )
+        }
+    }
+
+    @discardableResult
+    func createCategory(named name: String, modelContext: ModelContext) throws -> FeedCategory {
+        let normalizedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedName.isEmpty else {
+            throw FeedCategoryError.emptyName
+        }
+
+        let categories = try modelContext.fetch(FetchDescriptor<FeedCategory>())
+        guard !categories.contains(where: {
+            $0.name.compare(normalizedName, options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame
+        }) else {
+            throw FeedCategoryError.duplicateName
+        }
+
+        let category = FeedCategory(name: normalizedName)
+        modelContext.insert(category)
+
+        do {
+            try modelContext.save()
+            return category
+        } catch {
+            modelContext.rollback()
+            throw error
+        }
+    }
+
+    @discardableResult
+    func assign(_ feed: Feed, to category: FeedCategory?, modelContext: ModelContext) -> Bool {
+        guard feed.category?.id != category?.id else { return true }
+        feed.category = category
+
+        do {
+            try modelContext.save()
+            return true
+        } catch {
+            modelContext.rollback()
+            notice = UserNotice(
+                title: "Couldn’t Move Feed",
+                message: "The category assignment could not be saved."
+            )
+            return false
+        }
+    }
+
+    @discardableResult
+    func delete(_ category: FeedCategory, modelContext: ModelContext) -> Bool {
+        modelContext.delete(category)
+        do {
+            try modelContext.save()
+            return true
+        } catch {
+            modelContext.rollback()
+            notice = UserNotice(
+                title: "Couldn’t Delete Category",
+                message: "The category could not be deleted."
+            )
+            return false
         }
     }
 

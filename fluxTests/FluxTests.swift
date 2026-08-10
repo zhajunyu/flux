@@ -319,6 +319,42 @@ final class FluxTests: XCTestCase {
         XCTAssertEqual(snapshot.calls, 3)
     }
 
+    func testCreateAssignAndDeleteCategoryKeepsFeed() throws {
+        let (container, context) = try makeContainer()
+        _ = container
+        let feed = Feed(title: "Design Notes", url: "https://example.com/design.xml")
+        context.insert(feed)
+        try context.save()
+
+        let store = FeedStore(client: .preview)
+        let category = try store.createCategory(named: "  Design  ", modelContext: context)
+
+        XCTAssertEqual(category.name, "Design")
+        XCTAssertTrue(store.assign(feed, to: category, modelContext: context))
+        XCTAssertEqual(feed.category?.id, category.id)
+        XCTAssertEqual(category.feeds.map(\.id), [feed.id])
+
+        XCTAssertTrue(store.delete(category, modelContext: context))
+        XCTAssertNil(feed.category)
+        XCTAssertEqual(try context.fetch(FetchDescriptor<Feed>()).count, 1)
+        XCTAssertTrue(try context.fetch(FetchDescriptor<FeedCategory>()).isEmpty)
+    }
+
+    func testCategoryNamesMustBeNonemptyAndUniqueIgnoringCase() throws {
+        let (container, context) = try makeContainer()
+        _ = container
+        let store = FeedStore(client: .preview)
+
+        XCTAssertThrowsError(try store.createCategory(named: "   ", modelContext: context)) { error in
+            XCTAssertEqual(error as? FeedCategoryError, .emptyName)
+        }
+
+        _ = try store.createCategory(named: "Technology", modelContext: context)
+        XCTAssertThrowsError(try store.createCategory(named: "technology", modelContext: context)) { error in
+            XCTAssertEqual(error as? FeedCategoryError, .duplicateName)
+        }
+    }
+
     private func fixtureData(named name: String, extension fileExtension: String) throws -> Data {
         let bundle = Bundle(for: FluxTests.self)
         let url = bundle.url(forResource: name, withExtension: fileExtension, subdirectory: "Fixtures")
@@ -327,7 +363,7 @@ final class FluxTests: XCTestCase {
     }
 
     private func makeContainer() throws -> (ModelContainer, ModelContext) {
-        let schema = Schema([Feed.self, Article.self])
+        let schema = Schema([Feed.self, FeedCategory.self, Article.self])
         let configuration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
         let container = try ModelContainer(for: schema, configurations: [configuration])
         return (container, ModelContext(container))
