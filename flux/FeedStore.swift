@@ -176,6 +176,27 @@ final class FeedStore {
     }
 
     @discardableResult
+    func markRead(_ articles: [Article], modelContext: ModelContext) -> Bool {
+        guard articles.contains(where: { !$0.isRead }) else { return true }
+
+        for article in articles {
+            article.isRead = true
+        }
+
+        do {
+            try modelContext.save()
+            return true
+        } catch {
+            modelContext.rollback()
+            notice = UserNotice(
+                title: "Couldn’t Update Articles",
+                message: "The selected articles could not be marked as read."
+            )
+            return false
+        }
+    }
+
+    @discardableResult
     func delete(_ feed: Feed, modelContext: ModelContext) -> Bool {
         modelContext.delete(feed)
         do {

@@ -200,6 +200,38 @@ final class FluxTests: XCTestCase {
         }
     }
 
+    func testMarkMultipleArticlesAsRead() throws {
+        let (container, context) = try makeContainer()
+        _ = container
+        let unreadArticle = Article(
+            title: "Unread",
+            link: "https://example.com/unread",
+            publishedAt: Date(timeIntervalSince1970: 100)
+        )
+        let readArticle = Article(
+            title: "Already read",
+            link: "https://example.com/read",
+            publishedAt: Date(timeIntervalSince1970: 200),
+            isRead: true
+        )
+        let unselectedArticle = Article(
+            title: "Not selected",
+            link: "https://example.com/unselected",
+            publishedAt: Date(timeIntervalSince1970: 300)
+        )
+        context.insert(unreadArticle)
+        context.insert(readArticle)
+        context.insert(unselectedArticle)
+        try context.save()
+
+        let store = FeedStore(client: .preview)
+        XCTAssertTrue(store.markRead([unreadArticle, readArticle], modelContext: context))
+
+        XCTAssertTrue(unreadArticle.isRead)
+        XCTAssertTrue(readArticle.isRead)
+        XCTAssertFalse(unselectedArticle.isRead)
+    }
+
     func testPartialRefreshKeepsCachedArticlesAndReportsFailure() async throws {
         let (container, context) = try makeContainer()
         _ = container

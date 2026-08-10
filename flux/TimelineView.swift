@@ -14,6 +14,9 @@ struct TimelineView: View {
     @Query(sort: \Article.publishedAt, order: .reverse) private var articles: [Article]
     @Query private var feeds: [Feed]
 
+    @State private var isEditing = false
+    @State private var selectedArticleIDs: Set<UUID> = []
+
     let onAddFeed: () -> Void
 
     var body: some View {
@@ -27,9 +30,11 @@ struct TimelineView: View {
         .navigationTitle("Timeline")
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
-                Button(action: onAddFeed) {
-                    Label("Add Feed", systemImage: "plus")
+                Button(action: toggleEditing) {
+                    Image(systemName: isEditing ? "checkmark" : "pencil")
                 }
+                .accessibilityLabel(isEditing ? "Done" : "Edit")
+                .disabled(articles.isEmpty)
             }
 
             if feedStore.isRefreshing {
@@ -39,25 +44,63 @@ struct TimelineView: View {
                         .accessibilityLabel("Refreshing feeds")
                 }
             }
+
+            if isEditing {
+                ToolbarItemGroup(placement: .bottomBar) {
+                    Button(allArticlesAreSelected ? "Deselect All" : "Select All") {
+                        toggleSelectAll()
+                    }
+
+                    Spacer()
+
+                    Button {
+                        markSelectedArticlesAsRead()
+                    } label: {
+                        Label("Mark as Read", systemImage: "envelope.open")
+                    }
+                    .disabled(selectedArticleIDs.isEmpty)
+                }
+            }
+        }
+        .toolbar(isEditing ? .hidden : .visible, for: .tabBar)
+        .onChange(of: articles.map(\.id)) { _, articleIDs in
+            selectedArticleIDs.formIntersection(articleIDs)
         }
     }
 
     private var articleList: some View {
         List {
             ForEach(articles) { article in
-                NavigationLink {
-                    ArticleDetailView(article: article)
-                } label: {
-                    ArticleRowView(article: article)
-                }
-                .swipeActions(edge: .leading, allowsFullSwipe: true) {
-                    readToggleButton(for: article)
-                }
-                .contextMenu {
-                    readToggleButton(for: article)
-                    if let articleURL = URL(string: article.link) {
-                        Link(destination: articleURL) {
-                            Label("Open in Safari", systemImage: "safari")
+                if isEditing {
+                    Button {
+                        toggleSelection(of: article)
+                    } label: {
+                        ArticleRowView(
+                            article: article,
+                            selectionState: selectedArticleIDs.contains(article.id)
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(article.title)
+                    .accessibilityValue(
+                        selectedArticleIDs.contains(article.id) ? "Selected" : "Not selected"
+                    )
+                    .accessibilityHint("Double tap to toggle selection")
+                } else {
+                    NavigationLink {
+                        ArticleDetailView(article: article)
+                    } label: {
+                        ArticleRowView(article: article)
+                    }
+                    .swipeActions(edge: .leading, allowsFullSwipe: true) {
+                        readToggleButton(for: article)
+                    }
+                    .contextMenu {
+                        readToggleButton(for: article)
+                        if let articleURL = URL(string: article.link) {
+                            Link(destination: articleURL) {
+                                Label("Open in Safari", systemImage: "safari")
+                            }
                         }
                     }
                 }
@@ -114,23 +157,62 @@ struct TimelineView: View {
         }
         .tint(article.isRead ? .orange : .blue)
     }
+
+    private var allArticlesAreSelected: Bool {
+        !articles.isEmpty && selectedArticleIDs.count == articles.count
+    }
+
+    private func toggleEditing() {
+        withAnimation {
+            isEditing.toggle()
+            if !isEditing {
+                selectedArticleIDs.removeAll()
+            }
+        }
+    }
+
+    private func toggleSelection(of article: Article) {
+        if selectedArticleIDs.contains(article.id) {
+            selectedArticleIDs.remove(article.id)
+        } else {
+            selectedArticleIDs.insert(article.id)
+        }
+    }
+
+    private func toggleSelectAll() {
+        if allArticlesAreSelected {
+            selectedArticleIDs.removeAll()
+        } else {
+            selectedArticleIDs = Set(articles.map(\.id))
+        }
+    }
+
+    private func markSelectedArticlesAsRead() {
+        let selectedArticles = articles.filter { selectedArticleIDs.contains($0.id) }
+        if feedStore.markRead(selectedArticles, modelContext: modelContext) {
+            selectedArticleIDs.removeAll()
+        }
+    }
 }
 
 private struct ArticleRowView: View {
     let article: Article
+    var selectionState: Bool?
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
-            Circle()
-                .fill(article.isRead ? Color.clear : Color.accentColor)
-                .frame(width: 8, height: 8)
-                .overlay {
-                    if article.isRead {
-                        Circle().stroke(.quaternary, lineWidth: 1)
-                    }
-                }
-                .padding(.top, 6)
-                .accessibilityHidden(true)
+            if let selectionState {
+                Image(systemName: selectionState ? "checkmark.circle.fill" : "circle")
+                    .font(.title3)
+                    .foregroundStyle(selectionState ? Color.accentColor : Color.secondary)
+                    .accessibilityHidden(true)
+            } else {
+                Circle()
+                    .fill(article.isRead ? Color.clear : Color.accentColor)
+                    .frame(width: 8, height: 8)
+                    .padding(.top, 6)
+                    .accessibilityHidden(true)
+            }
 
             VStack(alignment: .leading, spacing: 7) {
                 Text(article.title)
@@ -159,8 +241,16 @@ private struct ArticleRowView: View {
             }
         }
         .padding(.vertical, 7)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(.rect)
         .accessibilityElement(children: .combine)
-        .accessibilityValue(article.isRead ? "Read" : "Unread")
+        .accessibilityValue(accessibilityValue)
+    }
+
+    private var accessibilityValue: String {
+        if let selectionState {
+            return selectionState ? "Selected" : "Not selected"
+        }
+        return article.isRead ? "Read" : "Unread"
     }
 }
