@@ -355,6 +355,14 @@ enum HTMLTextExtractor {
         let trimmed = source.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
 
+        // NSAttributedString's HTML importer is comparatively expensive. Most
+        // feeds, including large feeds whose summaries are wrapped only in
+        // CDATA, have already been decoded to plain text by FeedKit. Avoid
+        // spinning up the importer for every article in those feeds.
+        guard containsHTML(in: trimmed) else {
+            return trimmed
+        }
+
         if let data = trimmed.data(using: .utf8),
            let attributed = try? NSAttributedString(
                data: data,
@@ -375,5 +383,52 @@ enum HTMLTextExtractor {
             .replacingOccurrences(of: "&gt;", with: ">")
             .replacingOccurrences(of: "&quot;", with: "\"")
             .replacingOccurrences(of: "&#39;", with: "'")
+    }
+
+    private static func containsHTML(in source: String) -> Bool {
+        var searchStart = source.startIndex
+        while let opening = source[searchStart...].firstIndex(of: "<") {
+            let marker = source.index(after: opening)
+            guard marker < source.endIndex else { break }
+
+            let character = source[marker]
+            if (character.isLetter || character == "/" || character == "!" || character == "?"),
+               source[marker...].contains(">") {
+                return true
+            }
+            searchStart = marker
+        }
+
+        searchStart = source.startIndex
+        while let ampersand = source[searchStart...].firstIndex(of: "&") {
+            let entityStart = source.index(after: ampersand)
+            let entityLimit = source.index(entityStart, offsetBy: 12, limitedBy: source.endIndex)
+                ?? source.endIndex
+
+            if let semicolon = source[entityStart ..< entityLimit].firstIndex(of: ";") {
+                let entity = source[entityStart ..< semicolon]
+                if isHTMLEntityName(entity) {
+                    return true
+                }
+            }
+            searchStart = entityStart
+        }
+
+        return false
+    }
+
+    private static func isHTMLEntityName(_ value: Substring) -> Bool {
+        guard let first = value.first else { return false }
+        if first == "#" {
+            let number = value.dropFirst()
+            guard !number.isEmpty else { return false }
+            if number.first == "x" || number.first == "X" {
+                let hexadecimal = number.dropFirst()
+                return !hexadecimal.isEmpty && hexadecimal.allSatisfy(\.isHexDigit)
+            }
+            return number.allSatisfy(\.isNumber)
+        }
+
+        return first.isLetter && value.allSatisfy { $0.isLetter || $0.isNumber }
     }
 }

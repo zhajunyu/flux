@@ -59,6 +59,21 @@ final class FluxTests: XCTestCase {
         XCTAssertNotNil(parsed.articles[0].publishedAt)
     }
 
+    func testPlainTextExtractionPreservesLiteralSymbols() {
+        XCTAssertEqual(
+            HTMLTextExtractor.singleLine("  Research < development & safety  "),
+            "Research < development & safety"
+        )
+        XCTAssertEqual(
+            HTMLTextExtractor.body("First paragraph\n\nR&D > guesswork"),
+            "First paragraph\n\nR&D > guesswork"
+        )
+        XCTAssertEqual(
+            HTMLTextExtractor.body("<p>Hello <strong>world</strong> &amp; friends.</p>"),
+            "Hello world & friends."
+        )
+    }
+
     func testURLNormalizationAndValidation() throws {
         XCTAssertEqual(
             try URLNormalizer.feedURL(from: "Example.COM/feed#section").absoluteString,

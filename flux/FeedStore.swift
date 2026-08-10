@@ -205,18 +205,31 @@ final class FeedStore {
     }
 
     private func merge(_ parsedFeed: ParsedFeed, into feed: Feed, modelContext: ModelContext) {
-        feed.title = parsedFeed.title
-        feed.url = parsedFeed.sourceURL.absoluteString
-        if let iconURL = parsedFeed.iconURL {
-            feed.iconURL = iconURL.absoluteString
+        if feed.title != parsedFeed.title {
+            feed.title = parsedFeed.title
+        }
+
+        let sourceURL = parsedFeed.sourceURL.absoluteString
+        if feed.url != sourceURL {
+            feed.url = sourceURL
+        }
+
+        if let iconURL = parsedFeed.iconURL?.absoluteString,
+           feed.iconURL != iconURL {
+            feed.iconURL = iconURL
         }
 
         var articlesByLink = Dictionary(uniqueKeysWithValues: feed.articles.map { ($0.link, $0) })
         for parsedArticle in uniqueArticles(from: parsedFeed.articles) {
             if let article = articlesByLink[parsedArticle.link] {
-                article.title = parsedArticle.title
-                article.content = parsedArticle.content
-                if let publishedAt = parsedArticle.publishedAt {
+                if article.title != parsedArticle.title {
+                    article.title = parsedArticle.title
+                }
+                if article.content != parsedArticle.content {
+                    article.content = parsedArticle.content
+                }
+                if let publishedAt = parsedArticle.publishedAt,
+                   article.publishedAt != publishedAt {
                     article.publishedAt = publishedAt
                 }
             } else {
