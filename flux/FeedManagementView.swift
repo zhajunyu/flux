@@ -17,6 +17,8 @@ struct FeedManagementView: View {
 
     @State private var pendingFeedDeletion: Feed?
     @State private var pendingCategoryDeletion: FeedCategory?
+    @State private var isImportingOPML = false
+    @State private var pendingOPMLImport: PreparedOPMLImport?
 
     let onAddFeed: () -> Void
     let onAddCategory: () -> Void
@@ -75,6 +77,34 @@ struct FeedManagementView: View {
         } message: { category in
             Text("Feeds in this category will move to Uncategorized. No subscriptions will be deleted.")
         }
+        .confirmationDialog(
+            "Existing Subscriptions Found",
+            isPresented: duplicateImportBinding,
+            titleVisibility: .visible,
+            presenting: pendingOPMLImport
+        ) { preparedImport in
+            Button("Keep Existing Categories") {
+                completeImport(preparedImport, duplicatePolicy: .preserveExistingCategories)
+            }
+            Button("Apply OPML Categories") {
+                completeImport(preparedImport, duplicatePolicy: .applyImportedCategories)
+            }
+            Button("Cancel", role: .cancel) {
+                pendingOPMLImport = nil
+            }
+        } message: { preparedImport in
+            Text(
+                "\(preparedImport.existingDuplicateCount) existing "
+                    + (preparedImport.existingDuplicateCount == 1 ? "subscription matches" : "subscriptions match")
+                    + " this file. Choose whether their current categories should be preserved."
+            )
+        }
+        .fileImporter(
+            isPresented: $isImportingOPML,
+            allowedContentTypes: [.opml, .xml],
+            allowsMultipleSelection: false,
+            onCompletion: handleOPMLSelection
+        )
     }
 
     private var addMenu: some View {
@@ -86,10 +116,18 @@ struct FeedManagementView: View {
             Button(action: onAddCategory) {
                 Label("New Category", systemImage: "folder.badge.plus")
             }
+
+            Divider()
+
+            Button {
+                isImportingOPML = true
+            } label: {
+                Label("Import OPML", systemImage: "square.and.arrow.down")
+            }
         } label: {
             Label("Add", systemImage: "plus")
         }
-        .accessibilityHint("Add a feed or category")
+        .accessibilityHint("Add a feed or category, or import subscriptions")
     }
 
     private var emptyState: some View {
@@ -244,6 +282,88 @@ struct FeedManagementView: View {
                 }
             }
         )
+    }
+
+    private var duplicateImportBinding: Binding<Bool> {
+        Binding(
+            get: { pendingOPMLImport != nil },
+            set: { isPresented in
+                if !isPresented {
+                    pendingOPMLImport = nil
+                }
+            }
+        )
+    }
+
+    private func handleOPMLSelection(_ result: Result<[URL], any Error>) {
+        switch result {
+        case .success(let urls):
+            guard let url = urls.first else { return }
+            let isAccessing = url.startAccessingSecurityScopedResource()
+            defer {
+                if isAccessing {
+                    url.stopAccessingSecurityScopedResource()
+                }
+            }
+
+            do {
+                let data = try Data(contentsOf: url)
+                let preparedImport = try feedStore.prepareOPMLImport(
+                    data: data,
+                    modelContext: modelContext
+                )
+                if preparedImport.existingDuplicateCount > 0 {
+                    pendingOPMLImport = preparedImport
+                } else {
+                    completeImport(
+                        preparedImport,
+                        duplicatePolicy: .preserveExistingCategories
+                    )
+                }
+            } catch {
+                feedStore.notice = UserNotice(
+                    title: "Import Failed",
+                    message: error.localizedDescription
+                )
+            }
+        case .failure(let error):
+            guard (error as NSError).code != NSUserCancelledError else { return }
+            feedStore.notice = UserNotice(
+                title: "Import Failed",
+                message: error.localizedDescription
+            )
+        }
+    }
+
+    private func completeImport(
+        _ preparedImport: PreparedOPMLImport,
+        duplicatePolicy: OPMLDuplicatePolicy
+    ) {
+        pendingOPMLImport = nil
+        do {
+            let result = try feedStore.importOPML(
+                preparedImport,
+                duplicatePolicy: duplicatePolicy,
+                modelContext: modelContext
+            )
+            feedStore.notice = UserNotice(
+                title: "OPML Import Complete",
+                message: result.summary
+            )
+
+            let addedFeedIDs = result.addedFeedIDs
+            Task {
+                await feedStore.refreshImportedFeeds(
+                    withIDs: addedFeedIDs,
+                    modelContext: modelContext
+                )
+            }
+        } catch {
+            feedStore.notice = UserNotice(
+                title: "Import Failed",
+                message: "The subscriptions could not be saved to this device."
+            )
+        }
     }
 }
 

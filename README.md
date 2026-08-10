@@ -7,6 +7,7 @@ iPadOS/macOS is planned to be supported in the future.
 ## Features
 
 - Subscribe to RSS feeds
+- Import and export OPML subscription lists
 - Read articles
 - Mark articles as read
 - Save articles

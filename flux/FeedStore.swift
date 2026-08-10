@@ -29,6 +29,40 @@ enum FeedCategoryError: LocalizedError, Equatable {
     }
 }
 
+enum OPMLDuplicatePolicy: Sendable, Equatable {
+    case preserveExistingCategories
+    case applyImportedCategories
+}
+
+struct PreparedOPMLImport: Sendable, Equatable {
+    let entries: [OPMLEntry]
+    let invalidEntryCount: Int
+    let duplicateEntryCount: Int
+    let existingDuplicateCount: Int
+}
+
+struct OPMLImportResult: Sendable, Equatable {
+    let addedCount: Int
+    let duplicateCount: Int
+    let reassignedCount: Int
+    let invalidEntryCount: Int
+    let addedFeedIDs: Set<UUID>
+
+    var summary: String {
+        var parts = ["\(addedCount) added", "\(duplicateCount) duplicate"]
+        if duplicateCount != 1 {
+            parts[1] += "s"
+        }
+        if reassignedCount > 0 {
+            parts.append("\(reassignedCount) reassigned")
+        }
+        if invalidEntryCount > 0 {
+            parts.append("\(invalidEntryCount) invalid")
+        }
+        return parts.joined(separator: ", ") + "."
+    }
+}
+
 @MainActor
 @Observable
 final class FeedStore {
@@ -37,6 +71,7 @@ final class FeedStore {
 
     private let client: FeedClient
     private var didAutoRefresh = false
+    private var pendingTargetedRefreshIDs = Set<UUID>()
 
     init(client: FeedClient = .live) {
         self.client = client
@@ -53,20 +88,38 @@ final class FeedStore {
         isRefreshing = true
         defer { isRefreshing = false }
 
-        let subscribedFeeds: [Feed]
-        do {
-            subscribedFeeds = try modelContext.fetch(FetchDescriptor<Feed>())
-        } catch {
-            if reportErrors {
-                notice = UserNotice(
-                    title: "Refresh Failed",
-                    message: "The subscriptions could not be loaded from this device."
-                )
-            }
-            return
+        let failures = await refreshBatch(feedIDs: nil, modelContext: modelContext)
+        if reportErrors {
+            reportRefreshFailures(failures)
         }
 
-        guard !subscribedFeeds.isEmpty else { return }
+        await drainTargetedRefreshes(modelContext: modelContext)
+    }
+
+    func refreshImportedFeeds(withIDs feedIDs: Set<UUID>, modelContext: ModelContext) async {
+        guard !feedIDs.isEmpty else { return }
+        pendingTargetedRefreshIDs.formUnion(feedIDs)
+        guard !isRefreshing else { return }
+
+        isRefreshing = true
+        defer { isRefreshing = false }
+        await drainTargetedRefreshes(modelContext: modelContext)
+    }
+
+    private func refreshBatch(feedIDs: Set<UUID>?, modelContext: ModelContext) async -> [String] {
+        let subscribedFeeds: [Feed]
+        do {
+            let allFeeds = try modelContext.fetch(FetchDescriptor<Feed>())
+            if let feedIDs {
+                subscribedFeeds = allFeeds.filter { feedIDs.contains($0.id) }
+            } else {
+                subscribedFeeds = allFeeds
+            }
+        } catch {
+            return ["Local database: The subscriptions could not be loaded from this device."]
+        }
+
+        guard !subscribedFeeds.isEmpty else { return [] }
 
         let targets = subscribedFeeds.compactMap { feed -> RefreshTarget? in
             guard let url = URL(string: feed.url) else { return nil }
@@ -97,7 +150,7 @@ final class FeedStore {
             return outcomes
         }
 
-        if Task.isCancelled { return }
+        if Task.isCancelled { return [] }
 
         var failures = invalidTargetNames.map { "\($0): Invalid feed URL" }
         do {
@@ -122,13 +175,7 @@ final class FeedStore {
             failures.append("Local database: \(error.localizedDescription)")
         }
 
-        if reportErrors, !failures.isEmpty {
-            let details = failures.sorted().joined(separator: "\n")
-            notice = UserNotice(
-                title: failures.count == 1 ? "One Feed Couldn’t Refresh" : "Some Feeds Couldn’t Refresh",
-                message: "Cached articles remain available.\n\n\(details)"
-            )
-        }
+        return failures
     }
 
     func previewFeed(from input: String, modelContext: ModelContext) async throws -> ParsedFeed {
@@ -174,6 +221,128 @@ final class FeedStore {
             modelContext.rollback()
             throw error
         }
+    }
+
+    func prepareOPMLImport(data: Data, modelContext: ModelContext) throws -> PreparedOPMLImport {
+        let parsed = try OPMLCodec.parse(data: data)
+        let existingFeeds = try modelContext.fetch(FetchDescriptor<Feed>())
+        let existingURLs = Set(existingFeeds.compactMap { feed -> String? in
+            guard let url = URL(string: feed.url) else { return nil }
+            return URLNormalizer.canonicalString(url)
+        })
+
+        var seenURLs = Set<String>()
+        var uniqueEntries: [OPMLEntry] = []
+        var duplicateEntryCount = 0
+
+        for entry in parsed.entries {
+            guard let canonicalURL = URLNormalizer.canonicalURL(entry.url) else { continue }
+            let canonicalString = canonicalURL.absoluteString
+            guard seenURLs.insert(canonicalString).inserted else {
+                duplicateEntryCount += 1
+                continue
+            }
+            uniqueEntries.append(
+                OPMLEntry(
+                    title: entry.title,
+                    url: canonicalURL,
+                    categoryName: entry.categoryName
+                )
+            )
+        }
+
+        let existingDuplicateCount = uniqueEntries.reduce(into: 0) { count, entry in
+            if existingURLs.contains(entry.url.absoluteString) {
+                count += 1
+            }
+        }
+
+        return PreparedOPMLImport(
+            entries: uniqueEntries,
+            invalidEntryCount: parsed.invalidEntryCount,
+            duplicateEntryCount: duplicateEntryCount,
+            existingDuplicateCount: existingDuplicateCount
+        )
+    }
+
+    func importOPML(
+        _ preparedImport: PreparedOPMLImport,
+        duplicatePolicy: OPMLDuplicatePolicy,
+        modelContext: ModelContext
+    ) throws -> OPMLImportResult {
+        let existingFeeds = try modelContext.fetch(FetchDescriptor<Feed>())
+        let existingCategories = try modelContext.fetch(FetchDescriptor<FeedCategory>())
+
+        var feedsByURL: [String: Feed] = [:]
+        for feed in existingFeeds {
+            guard let url = URL(string: feed.url),
+                  let canonicalURL = URLNormalizer.canonicalString(url)
+            else {
+                continue
+            }
+            feedsByURL[canonicalURL] = feed
+        }
+
+        var categoriesByName: [String: FeedCategory] = [:]
+        for category in existingCategories {
+            categoriesByName[categoryLookupKey(category.name)] = category
+        }
+
+        var addedFeedIDs = Set<UUID>()
+        var existingDuplicateCount = 0
+        var reassignedCount = 0
+
+        func category(named name: String?) -> FeedCategory? {
+            guard let name = normalizedCategoryName(name) else { return nil }
+            let key = categoryLookupKey(name)
+            if let existing = categoriesByName[key] {
+                return existing
+            }
+
+            let newCategory = FeedCategory(name: name)
+            modelContext.insert(newCategory)
+            categoriesByName[key] = newCategory
+            return newCategory
+        }
+
+        for entry in preparedImport.entries {
+            let canonicalURL = entry.url.absoluteString
+            if let existingFeed = feedsByURL[canonicalURL] {
+                existingDuplicateCount += 1
+                if duplicatePolicy == .applyImportedCategories {
+                    let importedCategory = category(named: entry.categoryName)
+                    if existingFeed.category?.id != importedCategory?.id {
+                        existingFeed.category = importedCategory
+                        reassignedCount += 1
+                    }
+                }
+                continue
+            }
+
+            let feed = Feed(
+                title: entry.title,
+                url: canonicalURL,
+                category: category(named: entry.categoryName)
+            )
+            modelContext.insert(feed)
+            feedsByURL[canonicalURL] = feed
+            addedFeedIDs.insert(feed.id)
+        }
+
+        do {
+            try modelContext.save()
+        } catch {
+            modelContext.rollback()
+            throw error
+        }
+
+        return OPMLImportResult(
+            addedCount: addedFeedIDs.count,
+            duplicateCount: preparedImport.duplicateEntryCount + existingDuplicateCount,
+            reassignedCount: reassignedCount,
+            invalidEntryCount: preparedImport.invalidEntryCount,
+            addedFeedIDs: addedFeedIDs
+        )
     }
 
     func toggleRead(_ article: Article, modelContext: ModelContext) {
@@ -284,6 +453,39 @@ final class FeedStore {
             )
             return false
         }
+    }
+
+    private func drainTargetedRefreshes(modelContext: ModelContext) async {
+        while !pendingTargetedRefreshIDs.isEmpty {
+            let feedIDs = pendingTargetedRefreshIDs
+            pendingTargetedRefreshIDs.removeAll()
+            let failures = await refreshBatch(feedIDs: feedIDs, modelContext: modelContext)
+            reportRefreshFailures(failures)
+        }
+    }
+
+    private func reportRefreshFailures(_ failures: [String]) {
+        guard !failures.isEmpty else { return }
+        let details = failures.sorted().joined(separator: "\n")
+        notice = UserNotice(
+            title: failures.count == 1 ? "One Feed Couldn’t Refresh" : "Some Feeds Couldn’t Refresh",
+            message: "Cached articles remain available.\n\n\(details)"
+        )
+    }
+
+    private func normalizedCategoryName(_ name: String?) -> String? {
+        guard let name else { return nil }
+        let normalized = name
+            .split(whereSeparator: \.isWhitespace)
+            .joined(separator: " ")
+        return normalized.isEmpty ? nil : normalized
+    }
+
+    private func categoryLookupKey(_ name: String) -> String {
+        name.folding(
+            options: [.caseInsensitive, .diacriticInsensitive],
+            locale: Locale(identifier: "en_US_POSIX")
+        )
     }
 
     private func containsFeed(with url: URL, modelContext: ModelContext) -> Bool {

@@ -355,6 +355,246 @@ final class FluxTests: XCTestCase {
         }
     }
 
+    func testOPMLParsingFlattensFoldersAndSkipsUnsupportedEntries() throws {
+        let data = Data(
+            #"""
+            <?xml version="1.0" encoding="UTF-8"?>
+            <opml version="1.1">
+              <head><title>Subscriptions</title></head>
+              <body>
+                <outline text="Technology">
+                  <outline text="Apple &amp; Swift">
+                    <outline text="Fallback title" title="  Swift   News  " type="rss" xmlUrl="HTTPS://Example.COM:443/feed#fragment"/>
+                  </outline>
+                </outline>
+                <outline text="Uncategorized" xmlUrl="https://example.org/rss"/>
+                <outline text="Broken" type="rss" xmlUrl="ftp://example.net/feed"/>
+                <outline text="Missing URL" type="rss"/>
+                <outline text="Comment" isComment="true">
+                  <outline text="Ignored" type="rss" xmlUrl="https://ignored.example/feed"/>
+                </outline>
+                <outline text="Remote" type="include" url="https://example.com/list.opml">
+                  <outline text="Also ignored" type="rss" xmlUrl="https://ignored.example/child"/>
+                </outline>
+              </body>
+            </opml>
+            """#.utf8
+        )
+
+        let result = try OPMLCodec.parse(data: data)
+
+        XCTAssertEqual(result.entries.count, 2)
+        XCTAssertEqual(result.invalidEntryCount, 2)
+        XCTAssertEqual(result.entries[0].title, "Swift News")
+        XCTAssertEqual(result.entries[0].url.absoluteString, "https://example.com/feed")
+        XCTAssertEqual(result.entries[0].categoryName, "Technology / Apple & Swift")
+        XCTAssertEqual(result.entries[1].categoryName, nil)
+    }
+
+    func testMalformedAndEmptyOPMLAreRejected() {
+        XCTAssertThrowsError(try OPMLCodec.parse(data: Data())) { error in
+            XCTAssertEqual(error as? OPMLError, .emptyDocument)
+        }
+        XCTAssertThrowsError(try OPMLCodec.parse(data: Data("<opml><body>".utf8))) { error in
+            XCTAssertEqual(error as? OPMLError, .invalidDocument)
+        }
+        XCTAssertThrowsError(try OPMLCodec.parse(data: Data("<rss/>".utf8))) { error in
+            XCTAssertEqual(error as? OPMLError, .invalidDocument)
+        }
+    }
+
+    func testOPMLImportPreservesExistingFeedsAndImportsValidEntries() throws {
+        let (container, context) = try makeContainer()
+        _ = container
+        let originalCategory = FeedCategory(name: "Original")
+        let existingFeed = Feed(
+            title: "Keep This Title",
+            url: "https://example.com/existing",
+            category: originalCategory
+        )
+        let cachedArticle = Article(
+            title: "Cached",
+            link: "https://example.com/article",
+            publishedAt: Date(timeIntervalSince1970: 100)
+        )
+        existingFeed.articles.append(cachedArticle)
+        context.insert(originalCategory)
+        context.insert(existingFeed)
+        context.insert(cachedArticle)
+        try context.save()
+
+        let data = Data(
+            #"""
+            <opml version="2.0"><head><title>Test</title></head><body>
+              <outline text="New"><outline text="Inner">
+                <outline text="Imported title" type="rss" xmlUrl="https://example.com/existing"/>
+                <outline text="New feed" type="rss" xmlUrl="https://example.com/new"/>
+                <outline text="Duplicate new feed" type="rss" xmlUrl="https://example.com/new"/>
+                <outline text="Invalid" type="rss" xmlUrl="file:///tmp/feed"/>
+              </outline></outline>
+            </body></opml>
+            """#.utf8
+        )
+        let store = FeedStore(client: .preview)
+        let prepared = try store.prepareOPMLImport(data: data, modelContext: context)
+
+        XCTAssertEqual(prepared.entries.count, 2)
+        XCTAssertEqual(prepared.existingDuplicateCount, 1)
+        XCTAssertEqual(prepared.duplicateEntryCount, 1)
+        XCTAssertEqual(prepared.invalidEntryCount, 1)
+
+        let result = try store.importOPML(
+            prepared,
+            duplicatePolicy: .preserveExistingCategories,
+            modelContext: context
+        )
+
+        XCTAssertEqual(result.addedCount, 1)
+        XCTAssertEqual(result.duplicateCount, 2)
+        XCTAssertEqual(result.reassignedCount, 0)
+        XCTAssertEqual(result.invalidEntryCount, 1)
+        XCTAssertEqual(existingFeed.title, "Keep This Title")
+        XCTAssertEqual(existingFeed.category?.name, "Original")
+        XCTAssertEqual(existingFeed.articles.map(\.title), ["Cached"])
+
+        let importedFeed = try XCTUnwrap(
+            context.fetch(FetchDescriptor<Feed>()).first { $0.url == "https://example.com/new" }
+        )
+        XCTAssertEqual(importedFeed.title, "New feed")
+        XCTAssertEqual(importedFeed.category?.name, "New / Inner")
+    }
+
+    func testOPMLImportCanApplyCategoriesToExistingFeeds() throws {
+        let (container, context) = try makeContainer()
+        _ = container
+        let originalCategory = FeedCategory(name: "Original")
+        let existingTargetCategory = FeedCategory(name: "technology")
+        let categorizedFeed = Feed(
+            title: "Categorized",
+            url: "https://example.com/categorized",
+            category: originalCategory
+        )
+        let feedMovingToUncategorized = Feed(
+            title: "Top Level",
+            url: "https://example.com/top",
+            category: originalCategory
+        )
+        context.insert(originalCategory)
+        context.insert(existingTargetCategory)
+        context.insert(categorizedFeed)
+        context.insert(feedMovingToUncategorized)
+        try context.save()
+
+        let data = Data(
+            #"""
+            <opml version="2.0"><head><title>Test</title></head><body>
+              <outline text="Technology">
+                <outline text="Imported title" type="rss" xmlUrl="https://example.com/categorized"/>
+              </outline>
+              <outline text="Top title" type="rss" xmlUrl="https://example.com/top"/>
+            </body></opml>
+            """#.utf8
+        )
+        let store = FeedStore(client: .preview)
+        let prepared = try store.prepareOPMLImport(data: data, modelContext: context)
+        let result = try store.importOPML(
+            prepared,
+            duplicatePolicy: .applyImportedCategories,
+            modelContext: context
+        )
+
+        XCTAssertEqual(result.addedCount, 0)
+        XCTAssertEqual(result.duplicateCount, 2)
+        XCTAssertEqual(result.reassignedCount, 2)
+        XCTAssertEqual(categorizedFeed.category?.id, existingTargetCategory.id)
+        XCTAssertNil(feedMovingToUncategorized.category)
+        XCTAssertEqual(categorizedFeed.title, "Categorized")
+        XCTAssertEqual(feedMovingToUncategorized.title, "Top Level")
+        XCTAssertEqual(try context.fetch(FetchDescriptor<FeedCategory>()).count, 2)
+    }
+
+    func testOPMLExportIsStableEscapedAndRoundTrips() throws {
+        let exported = OPMLCodec.encode(entries: [
+            OPMLExportEntry(
+                title: "Swift & Design",
+                url: "https://example.com/feed?a=1&b=2",
+                categoryName: "Technology / Apple"
+            ),
+            OPMLExportEntry(
+                title: "Uncategorized <News>",
+                url: "https://example.org/rss",
+                categoryName: nil
+            ),
+            OPMLExportEntry(
+                title: "Alpha",
+                url: "https://alpha.example/feed",
+                categoryName: "Design"
+            ),
+        ])
+        let xml = try XCTUnwrap(String(data: exported, encoding: .utf8))
+
+        XCTAssertTrue(xml.contains("Swift &amp; Design"))
+        XCTAssertTrue(xml.contains("Uncategorized &lt;News&gt;"))
+        XCTAssertTrue(xml.contains("a=1&amp;b=2"))
+        XCTAssertLessThan(
+            try XCTUnwrap(xml.range(of: #"<outline text="Design""#)?.lowerBound),
+            try XCTUnwrap(xml.range(of: #"<outline text="Technology / Apple""#)?.lowerBound)
+        )
+
+        let parsed = try OPMLCodec.parse(data: exported)
+        XCTAssertEqual(parsed.invalidEntryCount, 0)
+        XCTAssertEqual(parsed.entries.count, 3)
+        XCTAssertEqual(
+            parsed.entries.first { $0.title == "Swift & Design" }?.categoryName,
+            "Technology / Apple"
+        )
+        XCTAssertEqual(
+            parsed.entries.first { $0.title == "Uncategorized <News>" }?.categoryName,
+            nil
+        )
+    }
+
+    func testImportedFeedRefreshQueuesBehindActiveRefresh() async throws {
+        let (container, context) = try makeContainer()
+        _ = container
+        let existingFeed = Feed(title: "Existing", url: "https://existing.example/feed")
+        context.insert(existingFeed)
+        try context.save()
+
+        let probe = URLCallProbe()
+        let store = FeedStore(client: FeedClient { url in
+            await probe.record(url)
+            if url.host == "existing.example" {
+                try await Task.sleep(for: .milliseconds(120))
+            }
+            return ParsedFeed(
+                title: url.host ?? "Feed",
+                sourceURL: url,
+                format: .rss,
+                fetchedAt: Date(),
+                articles: []
+            )
+        })
+
+        let activeRefresh = Task { @MainActor in
+            await store.refreshAll(modelContext: context)
+        }
+        while !store.isRefreshing {
+            await Task.yield()
+        }
+
+        let importedFeed = Feed(title: "Imported", url: "https://imported.example/feed")
+        context.insert(importedFeed)
+        try context.save()
+        await store.refreshImportedFeeds(withIDs: [importedFeed.id], modelContext: context)
+        await activeRefresh.value
+
+        let calls = await probe.urls()
+        XCTAssertEqual(calls.filter { $0.host == "existing.example" }.count, 1)
+        XCTAssertEqual(calls.filter { $0.host == "imported.example" }.count, 1)
+        XCTAssertNotNil(importedFeed.lastFetched)
+    }
+
     private func fixtureData(named name: String, extension fileExtension: String) throws -> Data {
         let bundle = Bundle(for: FluxTests.self)
         let url = bundle.url(forResource: name, withExtension: fileExtension, subdirectory: "Fixtures")
@@ -393,5 +633,17 @@ private actor ConcurrencyProbe {
 
     func snapshot() -> (peak: Int, calls: Int) {
         (peak, calls)
+    }
+}
+
+private actor URLCallProbe {
+    private var recordedURLs: [URL] = []
+
+    func record(_ url: URL) {
+        recordedURLs.append(url)
+    }
+
+    func urls() -> [URL] {
+        recordedURLs
     }
 }
