@@ -8,33 +8,30 @@
 import SwiftUI
 
 struct FeedIconView: View {
+    @Environment(FeedIconCache.self) private var iconCache
+
+    @State private var loadedIcon: LoadedFeedIcon?
+    @State private var failedURL: URL?
+
     let url: URL?
     let size: CGFloat
     let cornerRadius: CGFloat
 
     var body: some View {
-        AsyncImage(
-            url: url,
-            transaction: Transaction(animation: .easeInOut(duration: 0.2))
-        ) { phase in
-            ZStack {
-                Color.accentColor.opacity(0.12)
+        ZStack {
+            Color.accentColor.opacity(0.12)
 
-                switch phase {
-                case .success(let image):
-                    image
-                        .resizable()
-                        .scaledToFill()
-                        .transition(.opacity)
-                case .empty where url != nil:
-                    ProgressView()
-                        .controlSize(.small)
-                        .tint(.accentColor)
-                case .empty, .failure:
-                    placeholder
-                @unknown default:
-                    placeholder
-                }
+            if let loadedIcon, loadedIcon.url == url {
+                Image(uiImage: loadedIcon.image)
+                    .resizable()
+                    .scaledToFill()
+                    .transition(.opacity)
+            } else if let url, failedURL != url {
+                ProgressView()
+                    .controlSize(.small)
+                    .tint(.accentColor)
+            } else {
+                placeholder
             }
         }
         .frame(width: size, height: size)
@@ -44,6 +41,9 @@ struct FeedIconView: View {
                 .stroke(.primary.opacity(0.06), lineWidth: 0.5)
         }
         .accessibilityHidden(true)
+        .task(id: url) {
+            await loadIcon()
+        }
     }
 
     private var placeholder: some View {
@@ -51,4 +51,37 @@ struct FeedIconView: View {
             .font(.system(size: size * 0.42, weight: .semibold))
             .foregroundStyle(.tint)
     }
+
+    private func loadIcon() async {
+        guard let url else {
+            loadedIcon = nil
+            failedURL = nil
+            return
+        }
+
+        failedURL = nil
+        let lookup = await iconCache.lookup(for: url)
+        guard !Task.isCancelled else { return }
+
+        if let image = lookup.image {
+            withAnimation(.easeInOut(duration: 0.2)) {
+                loadedIcon = LoadedFeedIcon(url: url, image: image)
+            }
+        }
+
+        guard lookup.isStale else { return }
+        if let image = await iconCache.refresh(for: url) {
+            guard !Task.isCancelled else { return }
+            withAnimation(.easeInOut(duration: 0.2)) {
+                loadedIcon = LoadedFeedIcon(url: url, image: image)
+            }
+        } else if lookup.image == nil, !Task.isCancelled {
+            failedURL = url
+        }
+    }
+}
+
+private struct LoadedFeedIcon {
+    let url: URL
+    let image: UIImage
 }

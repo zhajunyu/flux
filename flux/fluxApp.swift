@@ -26,11 +26,13 @@ struct fluxApp: App {
     }()
 
     @State private var feedStore = FeedStore()
+    @State private var feedIconCache = FeedIconCache()
 
     var body: some Scene {
         WindowGroup {
             ContentView()
                 .environment(feedStore)
+                .environment(feedIconCache)
         }
         .modelContainer(sharedModelContainer)
     }
