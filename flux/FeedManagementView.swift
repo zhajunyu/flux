@@ -14,25 +14,29 @@ struct FeedManagementView: View {
     @Environment(FeedStore.self) private var feedStore
     @Query(sort: \Feed.title) private var feeds: [Feed]
     @Query(sort: \FeedCategory.name) private var categories: [FeedCategory]
+    @Query(filter: #Predicate<Article> { !$0.isRead }) private var unreadArticles: [Article]
 
     @State private var pendingFeedDeletion: Feed?
     @State private var pendingCategoryDeletion: FeedCategory?
     @State private var isImportingOPML = false
     @State private var pendingOPMLImport: PreparedOPMLImport?
+    @State private var expandedFolderIDs: Set<String> = []
 
     let onAddFeed: () -> Void
     let onAddCategory: () -> Void
 
     var body: some View {
-        Group {
-            if feeds.isEmpty && categories.isEmpty {
-                emptyState
-            } else {
-                feedList
-            }
-        }
-        .navigationTitle("Feeds")
+        feedList
         .toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                NavigationLink {
+                    SettingsView()
+                } label: {
+                    Label("Settings", systemImage: "gearshape")
+                }
+                .accessibilityHint("Opens app settings")
+            }
+
             ToolbarItem(placement: .primaryAction) {
                 addMenu
             }
@@ -145,111 +149,183 @@ struct FeedManagementView: View {
     }
 
     private var feedList: some View {
-        List {
-            if feeds.isEmpty {
-                ContentUnavailableView {
-                    Label("No Subscriptions", systemImage: "dot.radiowaves.up.forward")
-                } description: {
-                    Text("Your categories are ready. Add a feed to start organizing subscriptions.")
-                } actions: {
-                    Button("Add Feed", action: onAddFeed)
-                        .buttonStyle(.borderedProminent)
-                }
-                .listRowBackground(Color.clear)
-            }
+        ScrollView {
+            LazyVStack(spacing: 0) {
+                timelineRow
 
-            ForEach(categories) { category in
-                categorySection(category)
-            }
+                if feeds.isEmpty && categories.isEmpty {
+                    emptyState
+                        .padding(.top, 32)
+                } else {
+                    libraryHeader
+                        .padding(.top, 28)
+                        .padding(.bottom, 12)
 
-            if !feeds.isEmpty {
-                Section {
-                    if uncategorizedFeeds.isEmpty {
-                        emptyDropTarget(for: nil)
-                    } else {
-                        ForEach(uncategorizedFeeds) { feed in
-                            feedRow(feed, dropTarget: nil)
+                    LazyVStack(spacing: 18) {
+                        ForEach(feedFolders) { folder in
+                            folderGroup(folder)
                         }
                     }
-                } header: {
-                    FeedCategoryHeader(
-                        title: "Uncategorized",
-                        count: uncategorizedFeeds.count,
-                        systemImage: "tray"
-                    )
-                    .feedDropTarget { identifier in
-                        moveFeed(identifiedBy: identifier, to: nil)
-                    }
                 }
             }
+            .frame(maxWidth: 720)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+            .frame(maxWidth: .infinity)
         }
-        .listStyle(.insetGrouped)
+        .background(Color(.systemGroupedBackground))
         .refreshable {
             await feedStore.refreshAll(modelContext: modelContext)
         }
     }
 
-    private func categorySection(_ category: FeedCategory) -> some View {
-        let categoryFeeds = feeds.filter { $0.category?.id == category.id }
+    private var timelineRow: some View {
+        NavigationLink {
+            TimelineView(onAddFeed: onAddFeed)
+        } label: {
+            TimelineHeroRow(unreadCount: timelineUnreadCount)
+        }
+        .buttonStyle(.plain)
+        .accessibilityHint("Opens articles from feeds shown in the timeline")
+    }
 
-        return Section {
-            if categoryFeeds.isEmpty {
-                emptyDropTarget(for: category)
-            } else {
-                ForEach(categoryFeeds) { feed in
-                    feedRow(feed, dropTarget: category)
+    private var libraryHeader: some View {
+        HStack(spacing: 10) {
+            Text("Library")
+                .font(.caption2.weight(.bold))
+                .textCase(.uppercase)
+                .tracking(1.4)
+                .foregroundStyle(.secondary)
+                .accessibilityAddTraits(.isHeader)
+
+            Rectangle()
+                .fill(.quaternary)
+                .frame(height: 0.5)
+                .accessibilityHidden(true)
+        }
+        .padding(.horizontal, 4)
+    }
+
+    private var timelineUnreadCount: Int {
+        unreadArticles.lazy.filter(\.isVisibleInTimeline).count
+    }
+
+    @ViewBuilder
+    private func folderGroup(_ folder: FeedFolderItem) -> some View {
+        let folderFeeds = feeds(in: folder)
+        let isExpanded = expandedFolderIDs.contains(folder.id)
+
+        VStack(alignment: .leading, spacing: 8) {
+            folderRow(folder, feeds: folderFeeds, isExpanded: isExpanded)
+
+            if isExpanded {
+                LazyVStack(spacing: 4) {
+                    ForEach(folderFeeds) { feed in
+                        feedRow(feed)
+                    }
                 }
+                .padding(.leading, 20)
+                .transition(.verticalSquash)
             }
-        } header: {
-            FeedCategoryHeader(
+        }
+    }
+
+    @ViewBuilder
+    private func folderRow(
+        _ folder: FeedFolderItem,
+        feeds folderFeeds: [Feed],
+        isExpanded: Bool
+    ) -> some View {
+        switch folder {
+        case .category(let category):
+            FeedFolderRow(
                 title: category.name,
-                count: categoryFeeds.count,
-                systemImage: "folder",
+                icon: .folder,
+                unreadCount: unreadArticleCount(in: folderFeeds),
+                isExpanded: isExpanded,
+                onToggle: { toggleExpansion(of: folder) },
                 onDelete: { pendingCategoryDeletion = category }
             )
             .feedDropTarget { identifier in
                 moveFeed(identifiedBy: identifier, to: category)
             }
+        case .uncategorized:
+            FeedFolderRow(
+                title: "Uncategorized",
+                icon: .uncategorized,
+                unreadCount: unreadArticleCount(in: folderFeeds),
+                isExpanded: isExpanded,
+                onToggle: { toggleExpansion(of: folder) }
+            )
+            .feedDropTarget { identifier in
+                moveFeed(identifiedBy: identifier, to: nil)
+            }
         }
     }
 
-    private func feedRow(_ feed: Feed, dropTarget category: FeedCategory?) -> some View {
+    private func feedRow(_ feed: Feed) -> some View {
         NavigationLink {
             FeedArticlesView(feed: feed)
         } label: {
-            FeedRowView(feed: feed)
-                .onDrag {
-                    NSItemProvider(object: feed.id.uuidString as NSString)
-                } preview: {
-                    Label(feed.title, systemImage: "dot.radiowaves.up.forward")
-                        .font(.headline)
-                        .padding(12)
-                        .background(.regularMaterial, in: .rect(cornerRadius: 12))
-                }
+            FeedLibraryRowLabel(
+                title: feed.title,
+                icon: .feed(feed.iconURL.flatMap(URL.init(string:)))
+            )
         }
-        .swipeActions {
-            Button("Delete", systemImage: "trash", role: .destructive) {
+        .buttonStyle(.plain)
+        .contextMenu {
+            Button("Delete Feed", systemImage: "trash", role: .destructive) {
                 pendingFeedDeletion = feed
             }
         }
+        .onDrag {
+            NSItemProvider(object: feed.id.uuidString as NSString)
+        } preview: {
+            Label(feed.title, systemImage: "dot.radiowaves.up.forward")
+                .font(.headline)
+                .padding(12)
+                .background(.regularMaterial, in: .rect(cornerRadius: 12))
+        }
         .feedDropTarget { identifier in
-            moveFeed(identifiedBy: identifier, to: category)
+            moveFeed(identifiedBy: identifier, to: feed.category)
         }
     }
 
-    private func emptyDropTarget(for category: FeedCategory?) -> some View {
-        Label("Drop feeds here", systemImage: "arrow.down")
-            .font(.subheadline)
-            .foregroundStyle(.tertiary)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.vertical, 5)
-            .feedDropTarget { identifier in
-                moveFeed(identifiedBy: identifier, to: category)
-            }
+    private var feedFolders: [FeedFolderItem] {
+        var folders = categories.map(FeedFolderItem.category)
+        if !feeds.isEmpty {
+            folders.append(.uncategorized)
+        }
+
+        return folders.sorted { lhs, rhs in
+            let comparison = lhs.title.localizedStandardCompare(rhs.title)
+            return comparison == .orderedAscending
+        }
     }
 
-    private var uncategorizedFeeds: [Feed] {
-        feeds.filter { $0.category == nil }
+    private func feeds(in folder: FeedFolderItem) -> [Feed] {
+        switch folder {
+        case .category(let category):
+            feeds.filter { $0.category?.id == category.id }
+        case .uncategorized:
+            feeds.filter { $0.category == nil }
+        }
+    }
+
+    private func toggleExpansion(of folder: FeedFolderItem) {
+        withAnimation(.snappy(duration: 0.25)) {
+            if expandedFolderIDs.contains(folder.id) {
+                expandedFolderIDs.remove(folder.id)
+            } else {
+                expandedFolderIDs.insert(folder.id)
+            }
+        }
+    }
+
+    private func unreadArticleCount(in feeds: [Feed]) -> Int {
+        feeds.reduce(into: 0) { count, feed in
+            count += feed.articles.lazy.filter { !$0.isRead }.count
+        }
     }
 
     private func moveFeed(identifiedBy identifier: String, to category: FeedCategory?) {
@@ -414,55 +490,206 @@ private struct FeedDropTargetModifier: ViewModifier {
     }
 }
 
-private struct FeedCategoryHeader: View {
-    let title: String
-    let count: Int
-    let systemImage: String
-    var onDelete: (() -> Void)?
+private enum FeedFolderItem: Identifiable {
+    case category(FeedCategory)
+    case uncategorized
 
-    var body: some View {
-        HStack(spacing: 7) {
-            Label(title, systemImage: systemImage)
-
-            Text(count.formatted())
-                .foregroundStyle(.tertiary)
-
-            Spacer()
-
-            if let onDelete {
-                Menu {
-                    Button("Delete Category", systemImage: "trash", role: .destructive) {
-                        onDelete()
-                    }
-                } label: {
-                    Image(systemName: "ellipsis")
-                        .frame(width: 30, height: 28)
-                        .contentShape(.rect)
-                }
-                .accessibilityLabel("Category options for \(title)")
-            }
+    var id: String {
+        switch self {
+        case .category(let category):
+            "category-\(category.id.uuidString)"
+        case .uncategorized:
+            "category-uncategorized"
         }
-        .contentShape(.rect)
+    }
+
+    var title: String {
+        switch self {
+        case .category(let category):
+            category.name
+        case .uncategorized:
+            "Uncategorized"
+        }
     }
 }
 
-private struct FeedRowView: View {
-    let feed: Feed
+private enum FeedLibraryIcon {
+    case folder
+    case uncategorized
+    case feed(URL?)
+}
+
+private struct TimelineHeroRow: View {
+    let unreadCount: Int
 
     var body: some View {
         HStack(spacing: 14) {
-            FeedIconView(
-                url: feed.iconURL.flatMap(URL.init(string:)),
-                size: 34,
-                cornerRadius: 9
-            )
+            Capsule()
+                .fill(.tint)
+                .frame(width: 3, height: 46)
+                .accessibilityHidden(true)
 
-            Text(feed.title)
-                .font(.headline)
-                .lineLimit(2)
+            Image(systemName: "newspaper.fill")
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundStyle(.white)
+                .frame(width: 42, height: 42)
+                .background(Color.accentColor, in: .circle)
+                .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text("Your reading")
+                    .font(.caption2.weight(.bold))
+                    .textCase(.uppercase)
+                    .tracking(1.2)
+                    .foregroundStyle(.secondary)
+
+                Text("Timeline")
+                    .font(.title2.weight(.semibold))
+                    .fontDesign(.serif)
+            }
+
+            Spacer(minLength: 12)
+
+            VStack(alignment: .trailing, spacing: 0) {
+                Text(unreadCount.formatted())
+                    .font(.title3.weight(.semibold))
+                    .monospacedDigit()
+
+                Text("unread")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+
+            Image(systemName: "chevron.forward")
+                .font(.caption.weight(.bold))
+                .foregroundStyle(.tint)
+                .frame(width: 28, height: 28)
+                .background(Color.accentColor.opacity(0.12), in: .circle)
+                .accessibilityHidden(true)
         }
-        .padding(.vertical, 7)
+        .padding(.horizontal, 4)
+        .padding(.vertical, 8)
         .contentShape(.rect)
         .accessibilityElement(children: .combine)
+    }
+}
+
+private struct FeedFolderRow: View {
+    let title: String
+    let icon: FeedLibraryIcon
+    let unreadCount: Int
+    let isExpanded: Bool
+    let onToggle: () -> Void
+    var onDelete: (() -> Void)?
+
+    @ViewBuilder
+    var body: some View {
+        if let onDelete {
+            row
+                .contextMenu {
+                    Button("Delete Category", systemImage: "trash", role: .destructive) {
+                        onDelete()
+                    }
+                }
+        } else {
+            row
+        }
+    }
+
+    private var row: some View {
+        HStack(spacing: 10) {
+            FeedLibraryIconView(icon: icon)
+
+            Text(title)
+                .font(.body.weight(.medium))
+                .lineLimit(1)
+
+            Spacer(minLength: 12)
+
+            Text("\(unreadCount.formatted()) unread")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+
+            Button(action: onToggle) {
+                Image(systemName: isExpanded ? "chevron.down" : "chevron.forward")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.tertiary)
+                    .frame(width: 28, height: 28)
+                    .contentShape(.rect)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(isExpanded ? "Collapse \(title)" : "Expand \(title)")
+        }
+        .padding(.leading, 4)
+        .frame(minHeight: 44)
+        .contentShape(.rect)
+        .accessibilityElement(children: .contain)
+    }
+}
+
+private struct FeedLibraryRowLabel: View {
+    let title: String
+    let icon: FeedLibraryIcon
+
+    var body: some View {
+        HStack(spacing: 10) {
+            FeedLibraryIconView(icon: icon)
+
+            Text(title)
+                .font(.body.weight(.medium))
+                .lineLimit(1)
+
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 4)
+        .frame(minHeight: 44)
+        .contentShape(.rect)
+        .accessibilityElement(children: .combine)
+    }
+}
+
+private struct FeedLibraryIconView: View {
+    let icon: FeedLibraryIcon
+
+    @ViewBuilder
+    var body: some View {
+        switch icon {
+        case .folder:
+            systemIcon("folder.fill")
+        case .uncategorized:
+            systemIcon("tray.full.fill")
+        case .feed(let url):
+            FeedIconView(url: url, size: 30, cornerRadius: 15)
+        }
+    }
+
+    private func systemIcon(_ systemName: String) -> some View {
+        Image(systemName: systemName)
+            .font(.system(size: 16, weight: .semibold))
+            .foregroundStyle(.tint)
+            .frame(width: 30, height: 30)
+            .background(Color.accentColor.opacity(0.12), in: .circle)
+            .accessibilityHidden(true)
+    }
+}
+
+private struct VerticalSquashModifier: ViewModifier {
+    let progress: CGFloat
+
+    func body(content: Content) -> some View {
+        content
+            .scaleEffect(x: 1, y: progress, anchor: .top)
+            .opacity(progress)
+            .clipped()
+    }
+}
+
+private extension AnyTransition {
+    static var verticalSquash: AnyTransition {
+        .modifier(
+            active: VerticalSquashModifier(progress: 0),
+            identity: VerticalSquashModifier(progress: 1)
+        )
     }
 }

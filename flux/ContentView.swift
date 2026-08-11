@@ -9,12 +9,6 @@ import SwiftData
 import SwiftUI
 
 struct ContentView: View {
-    private enum AppTab: Hashable {
-        case timeline
-        case feeds
-        case settings
-    }
-
     private enum SheetDestination: String, Identifiable {
         case addFeed
         case addCategory
@@ -24,7 +18,6 @@ struct ContentView: View {
 
     @Environment(FeedStore.self) private var feedStore
     @Environment(\.modelContext) private var modelContext
-    @Query(filter: #Predicate<Article> { !$0.isRead }) private var unreadArticles: [Article]
 
     @AppStorage(AppPreferenceKey.appearance)
     private var appearance = AppAppearance.system.rawValue
@@ -32,38 +25,15 @@ struct ContentView: View {
     @AppStorage(AppPreferenceKey.refreshFeedsOnLaunch)
     private var refreshFeedsOnLaunch = true
 
-    @State private var selectedTab: AppTab = .timeline
     @State private var presentedSheet: SheetDestination?
 
-    private var timelineUnreadCount: Int {
-        unreadArticles.lazy.filter(\.isVisibleInTimeline).count
-    }
-
     var body: some View {
-        TabView(selection: $selectedTab) {
-            Tab("Timeline", systemImage: "newspaper", value: .timeline) {
-                NavigationStack {
-                    TimelineView(onAddFeed: presentAddFeed)
-                }
-            }
-            .badge(timelineUnreadCount)
-
-            Tab("Feeds", systemImage: "dot.radiowaves.up.forward", value: .feeds) {
-                NavigationStack {
-                    FeedManagementView(
-                        onAddFeed: presentAddFeed,
-                        onAddCategory: presentAddCategory
-                    )
-                }
-            }
-
-            Tab("Settings", systemImage: "gearshape", value: .settings) {
-                NavigationStack {
-                    SettingsView()
-                }
-            }
+        NavigationStack {
+            FeedManagementView(
+                onAddFeed: presentAddFeed,
+                onAddCategory: presentAddCategory
+            )
         }
-        .tabViewStyle(.sidebarAdaptable)
         .preferredColorScheme(selectedAppearance.colorScheme)
         .sheet(item: $presentedSheet) { destination in
             switch destination {

@@ -70,7 +70,6 @@ struct TimelineView: View {
                 }
             }
         }
-        .toolbar(isEditing ? .hidden : .visible, for: .tabBar)
         .onChange(of: timelineArticles.map(\.id)) { _, articleIDs in
             selectedArticleIDs.formIntersection(articleIDs)
         }

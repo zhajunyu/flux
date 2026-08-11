@@ -79,7 +79,6 @@ struct FeedArticlesView: View {
                 }
             }
         }
-        .toolbar(isEditing ? .hidden : .visible, for: .tabBar)
         .onChange(of: articles.map(\.id)) { _, articleIDs in
             selectedArticleIDs.formIntersection(articleIDs)
         }
