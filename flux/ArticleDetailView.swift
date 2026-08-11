@@ -12,68 +12,31 @@ struct ArticleDetailView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(FeedStore.self) private var feedStore
 
+    @State private var loadFailure: ArticleWebViewFailure?
+    @State private var retryURL: URL?
+    @State private var reloadID = 0
+
     let article: Article
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                VStack(alignment: .leading, spacing: 12) {
-                    Text(article.title)
-                        .font(.largeTitle.bold())
-                        .fontDesign(.serif)
-                        .fixedSize(horizontal: false, vertical: true)
-
-                    HStack(spacing: 10) {
-                        Image(systemName: "dot.radiowaves.left.and.right")
-                            .foregroundStyle(.tint)
-                            .accessibilityHidden(true)
-
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(article.feed?.title ?? "Unknown Source")
-                                .font(.subheadline.weight(.semibold))
-                            Text(
-                                article.publishedAt,
-                                format: .dateTime
-                                    .year()
-                                    .month(.wide)
-                                    .day()
-                                    .hour()
-                                    .minute()
-                            )
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+        Group {
+            if let articleURL {
+                ZStack {
+                    ArticleWebView(
+                        url: retryURL ?? articleURL,
+                        reloadID: reloadID,
+                        onNavigationFailure: { failure in
+                            loadFailure = failure
                         }
+                    )
+
+                    if let loadFailure {
+                        loadFailureView(loadFailure)
                     }
                 }
-
-                Divider()
-
-                if let content = article.content {
-                    Text(content)
-                        .font(.body)
-                        .lineSpacing(6)
-                        .textSelection(.enabled)
-                        .fixedSize(horizontal: false, vertical: true)
-                } else {
-                    Text("This feed did not include article content. Open the original page to continue reading.")
-                        .font(.body)
-                        .foregroundStyle(.secondary)
-                }
-
-                if let articleURL = URL(string: article.link) {
-                    Link(destination: articleURL) {
-                        Label("Open in Safari", systemImage: "safari")
-                            .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.large)
-                    .padding(.top, 8)
-                }
+            } else {
+                invalidURLView
             }
-            .frame(maxWidth: 720, alignment: .leading)
-            .padding(.horizontal, 22)
-            .padding(.vertical, 24)
-            .frame(maxWidth: .infinity)
         }
         .navigationTitle("Article")
         .navigationBarTitleDisplayMode(.inline)
@@ -88,6 +51,40 @@ struct ArticleDetailView: View {
                     )
                 }
             }
+        }
+    }
+
+    private var articleURL: URL? {
+        URL(string: article.link).flatMap(URLNormalizer.canonicalURL)
+    }
+
+    private func loadFailureView(_ failure: ArticleWebViewFailure) -> some View {
+        ContentUnavailableView {
+            Label("Unable to Load Article", systemImage: "wifi.exclamationmark")
+        } description: {
+            Text(failure.message)
+        } actions: {
+            Button("Retry") {
+                retryURL = failure.url
+                loadFailure = nil
+                reloadID &+= 1
+            }
+            .buttonStyle(.borderedProminent)
+
+            Link(destination: failure.url) {
+                Label("Open in Safari", systemImage: "safari")
+            }
+            .buttonStyle(.bordered)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color(.systemBackground))
+    }
+
+    private var invalidURLView: some View {
+        ContentUnavailableView {
+            Label("Unable to Load Article", systemImage: "link.badge.plus")
+        } description: {
+            Text("This article does not have a valid web address.")
         }
     }
 }

@@ -87,6 +87,46 @@ final class FluxTests: XCTestCase {
         XCTAssertThrowsError(try URLNormalizer.feedURL(from: "   "))
     }
 
+    func testArticleWebNavigationPolicy() throws {
+        XCTAssertEqual(
+            ArticleWebNavigationPolicy.destination(
+                for: try XCTUnwrap(URL(string: "https://example.com/article"))
+            ),
+            .webView
+        )
+        XCTAssertEqual(
+            ArticleWebNavigationPolicy.destination(
+                for: try XCTUnwrap(URL(string: "http://example.com/article"))
+            ),
+            .webView
+        )
+        XCTAssertEqual(
+            ArticleWebNavigationPolicy.destination(
+                for: try XCTUnwrap(URL(string: "mailto:editor@example.com"))
+            ),
+            .externalApplication
+        )
+        XCTAssertEqual(
+            ArticleWebNavigationPolicy.destination(
+                for: try XCTUnwrap(URL(string: "tel:+15555550123"))
+            ),
+            .externalApplication
+        )
+        XCTAssertEqual(
+            ArticleWebNavigationPolicy.destination(
+                for: try XCTUnwrap(URL(string: "file:///tmp/article.html"))
+            ),
+            .unsupported
+        )
+        XCTAssertEqual(
+            ArticleWebNavigationPolicy.destination(
+                for: try XCTUnwrap(URL(string: "example.com/article"))
+            ),
+            .unsupported
+        )
+        XCTAssertEqual(ArticleWebNavigationPolicy.destination(for: nil), .unsupported)
+    }
+
     func testSubscribeMergePreservesReadStateAndCascadeDelete() async throws {
         let (container, context) = try makeContainer()
         _ = container
