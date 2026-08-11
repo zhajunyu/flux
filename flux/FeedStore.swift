@@ -403,6 +403,28 @@ final class FeedStore {
     }
 
     @discardableResult
+    func setTimelineVisibility(
+        _ isShownInTimeline: Bool,
+        for feed: Feed,
+        modelContext: ModelContext
+    ) -> Bool {
+        guard feed.isShownInTimeline != isShownInTimeline else { return true }
+        feed.isShownInTimeline = isShownInTimeline
+
+        do {
+            try modelContext.save()
+            return true
+        } catch {
+            modelContext.rollback()
+            notice = UserNotice(
+                title: "Couldn’t Update Feed",
+                message: "The timeline setting could not be saved."
+            )
+            return false
+        }
+    }
+
+    @discardableResult
     func delete(_ category: FeedCategory, modelContext: ModelContext) -> Bool {
         modelContext.delete(category)
         do {

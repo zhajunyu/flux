@@ -15,6 +15,7 @@ final class Feed {
     var url: String
     var iconURL: String?
     var lastFetched: Date?
+    var isShownInTimeline: Bool = true
     var category: FeedCategory?
 
     @Relationship(deleteRule: .cascade, inverse: \Article.feed)
@@ -26,6 +27,7 @@ final class Feed {
         url: String,
         iconURL: String? = nil,
         lastFetched: Date? = nil,
+        isShownInTimeline: Bool = true,
         category: FeedCategory? = nil,
         articles: [Article] = []
     ) {
@@ -34,6 +36,7 @@ final class Feed {
         self.url = url
         self.iconURL = iconURL
         self.lastFetched = lastFetched
+        self.isShownInTimeline = isShownInTimeline
         self.category = category
         self.articles = articles
     }
@@ -84,5 +87,9 @@ final class Article {
         self.publishedAt = publishedAt
         self.isRead = isRead
         self.feed = feed
+    }
+
+    var isVisibleInTimeline: Bool {
+        feed?.isShownInTimeline ?? true
     }
 }

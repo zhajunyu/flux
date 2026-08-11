@@ -35,6 +35,10 @@ struct ContentView: View {
     @State private var selectedTab: AppTab = .timeline
     @State private var presentedSheet: SheetDestination?
 
+    private var timelineUnreadCount: Int {
+        unreadArticles.lazy.filter(\.isVisibleInTimeline).count
+    }
+
     var body: some View {
         TabView(selection: $selectedTab) {
             Tab("Timeline", systemImage: "newspaper", value: .timeline) {
@@ -42,7 +46,7 @@ struct ContentView: View {
                     TimelineView(onAddFeed: presentAddFeed)
                 }
             }
-            .badge(unreadArticles.count)
+            .badge(timelineUnreadCount)
 
             Tab("Feeds", systemImage: "dot.radiowaves.left.and.right", value: .feeds) {
                 NavigationStack {

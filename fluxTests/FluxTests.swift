@@ -340,6 +340,31 @@ final class FluxTests: XCTestCase {
         XCTAssertTrue(try context.fetch(FetchDescriptor<FeedCategory>()).isEmpty)
     }
 
+    func testFeedTimelineVisibilityDefaultsOnAndCanBePersisted() throws {
+        let (container, context) = try makeContainer()
+        _ = container
+        let feed = Feed(title: "Focused Feed", url: "https://example.com/focused.xml")
+        let article = Article(
+            title: "An article",
+            link: "https://example.com/article",
+            publishedAt: Date(timeIntervalSince1970: 100)
+        )
+        feed.articles.append(article)
+        context.insert(feed)
+        context.insert(article)
+        try context.save()
+
+        XCTAssertTrue(feed.isShownInTimeline)
+        XCTAssertTrue(article.isVisibleInTimeline)
+
+        let store = FeedStore(client: .preview)
+        XCTAssertTrue(store.setTimelineVisibility(false, for: feed, modelContext: context))
+        XCTAssertFalse(article.isVisibleInTimeline)
+
+        let persistedFeed = try XCTUnwrap(context.fetch(FetchDescriptor<Feed>()).first)
+        XCTAssertFalse(persistedFeed.isShownInTimeline)
+    }
+
     func testCategoryNamesMustBeNonemptyAndUniqueIgnoringCase() throws {
         let (container, context) = try makeContainer()
         _ = container

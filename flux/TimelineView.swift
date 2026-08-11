@@ -19,9 +19,13 @@ struct TimelineView: View {
 
     let onAddFeed: () -> Void
 
+    private var timelineArticles: [Article] {
+        articles.filter(\.isVisibleInTimeline)
+    }
+
     var body: some View {
         Group {
-            if articles.isEmpty {
+            if timelineArticles.isEmpty {
                 emptyState
             } else {
                 articleList
@@ -34,7 +38,7 @@ struct TimelineView: View {
                     Image(systemName: isEditing ? "checkmark" : "pencil")
                 }
                 .accessibilityLabel(isEditing ? "Done" : "Edit")
-                .disabled(articles.isEmpty)
+                .disabled(timelineArticles.isEmpty)
             }
 
             if feedStore.isRefreshing {
@@ -63,14 +67,14 @@ struct TimelineView: View {
             }
         }
         .toolbar(isEditing ? .hidden : .visible, for: .tabBar)
-        .onChange(of: articles.map(\.id)) { _, articleIDs in
+        .onChange(of: timelineArticles.map(\.id)) { _, articleIDs in
             selectedArticleIDs.formIntersection(articleIDs)
         }
     }
 
     private var articleList: some View {
         List {
-            ForEach(articles) { article in
+            ForEach(timelineArticles) { article in
                 if isEditing {
                     Button {
                         toggleSelection(of: article)
@@ -115,15 +119,11 @@ struct TimelineView: View {
     private var emptyState: some View {
         ContentUnavailableView {
             Label(
-                feeds.isEmpty ? "No Feeds Yet" : "No Articles Yet",
+                emptyStateTitle,
                 systemImage: feeds.isEmpty ? "dot.radiowaves.left.and.right" : "newspaper"
             )
         } description: {
-            Text(
-                feeds.isEmpty
-                    ? "Subscribe to a feed to build your timeline."
-                    : "Refresh to check your subscriptions for new articles."
-            )
+            Text(emptyStateDescription)
         } actions: {
             if feeds.isEmpty {
                 Button("Add Feed", action: onAddFeed)
@@ -146,6 +146,30 @@ struct TimelineView: View {
         }
     }
 
+    private var allFeedsAreHiddenFromTimeline: Bool {
+        !feeds.isEmpty && feeds.allSatisfy { !$0.isShownInTimeline }
+    }
+
+    private var emptyStateTitle: String {
+        if feeds.isEmpty {
+            "No Feeds Yet"
+        } else if allFeedsAreHiddenFromTimeline {
+            "No Feeds in Timeline"
+        } else {
+            "No Articles Yet"
+        }
+    }
+
+    private var emptyStateDescription: String {
+        if feeds.isEmpty {
+            "Subscribe to a feed to build your timeline."
+        } else if allFeedsAreHiddenFromTimeline {
+            "Turn on Show in Timeline from a feed’s detail view to see its articles here."
+        } else {
+            "Refresh to check your visible subscriptions for new articles."
+        }
+    }
+
     private func readToggleButton(for article: Article) -> some View {
         Button {
             feedStore.toggleRead(article, modelContext: modelContext)
@@ -159,7 +183,7 @@ struct TimelineView: View {
     }
 
     private var allArticlesAreSelected: Bool {
-        !articles.isEmpty && selectedArticleIDs.count == articles.count
+        !timelineArticles.isEmpty && selectedArticleIDs.count == timelineArticles.count
     }
 
     private func toggleEditing() {
@@ -183,12 +207,12 @@ struct TimelineView: View {
         if allArticlesAreSelected {
             selectedArticleIDs.removeAll()
         } else {
-            selectedArticleIDs = Set(articles.map(\.id))
+            selectedArticleIDs = Set(timelineArticles.map(\.id))
         }
     }
 
     private func markSelectedArticlesAsRead() {
-        let selectedArticles = articles.filter { selectedArticleIDs.contains($0.id) }
+        let selectedArticles = timelineArticles.filter { selectedArticleIDs.contains($0.id) }
         if feedStore.markRead(selectedArticles, modelContext: modelContext) {
             selectedArticleIDs.removeAll()
         }

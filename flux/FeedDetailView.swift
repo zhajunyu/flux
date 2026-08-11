@@ -112,6 +112,27 @@ struct FeedDetailView: View {
             Divider()
                 .padding(.leading, 46)
 
+            Toggle(isOn: timelineVisibility) {
+                Label {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Show in Timeline")
+                        Text("Include articles from this feed in the main timeline.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                } icon: {
+                    Image(systemName: "newspaper")
+                        .font(.body.weight(.medium))
+                        .foregroundStyle(.tint)
+                        .frame(width: 24)
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+
+            Divider()
+                .padding(.leading, 46)
+
             HStack(alignment: .firstTextBaseline, spacing: 12) {
                 Image(systemName: "folder")
                     .font(.body.weight(.medium))
@@ -179,6 +200,19 @@ struct FeedDetailView: View {
             set: { selectedID in
                 let category = categories.first { $0.id == selectedID }
                 feedStore.assign(feed, to: category, modelContext: modelContext)
+            }
+        )
+    }
+
+    private var timelineVisibility: Binding<Bool> {
+        Binding(
+            get: { feed.isShownInTimeline },
+            set: { isShown in
+                feedStore.setTimelineVisibility(
+                    isShown,
+                    for: feed,
+                    modelContext: modelContext
+                )
             }
         )
     }
