@@ -19,21 +19,9 @@ struct ArticleRowView: View {
                     .font(.title3)
                     .foregroundStyle(selectionState ? Color.accentColor : Color.secondary)
                     .accessibilityHidden(true)
-            } else {
-                Circle()
-                    .fill(article.isRead ? Color.clear : Color.accentColor)
-                    .frame(width: 8, height: 8)
-                    .padding(.top, 6)
-                    .accessibilityHidden(true)
             }
 
-            VStack(alignment: .leading, spacing: 7) {
-                Text(article.title)
-                    .font(.headline)
-                    .fontWeight(article.isRead ? .regular : .semibold)
-                    .foregroundStyle(.primary)
-                    .lineLimit(3)
-
+            VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 6) {
                     if showsFeedTitle {
                         Text(article.feed?.title ?? "Unknown Source")
@@ -47,6 +35,12 @@ struct ArticleRowView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
+                Text(article.title)
+                    .font(.headline)
+                    .fontWeight(article.isRead ? .regular : .semibold)
+                    .foregroundStyle(.primary)
+                    .lineLimit(3)
+
                 if let content = article.content {
                     Text(content)
                         .font(.subheadline)
@@ -55,7 +49,6 @@ struct ArticleRowView: View {
                 }
             }
         }
-        .padding(.vertical, 7)
         .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(.rect)
         .accessibilityElement(children: .combine)
@@ -67,5 +60,14 @@ struct ArticleRowView: View {
             return selectionState ? "Selected" : "Not selected"
         }
         return article.isRead ? "Read" : "Unread"
+    }
+}
+
+extension View {
+    func articleListRowStyle() -> some View {
+        listRowInsets(
+            EdgeInsets(top: 14, leading: 20, bottom: 14, trailing: 16)
+        )
+        .listRowSeparator(.hidden)
     }
 }

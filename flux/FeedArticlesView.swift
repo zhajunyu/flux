@@ -13,6 +13,7 @@ struct FeedArticlesView: View {
     @Environment(FeedStore.self) private var feedStore
 
     @State private var isEditing = false
+    @State private var navigationArticle: Article?
     @State private var selectedArticleIDs: Set<UUID> = []
 
     let feed: Feed
@@ -32,6 +33,9 @@ struct FeedArticlesView: View {
             }
         }
         .navigationTitle(feed.title)
+        .navigationDestination(item: $navigationArticle) { article in
+            ArticleDetailView(article: article)
+        }
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {
                 if !isEditing {
@@ -100,12 +104,14 @@ struct FeedArticlesView: View {
                         selectedArticleIDs.contains(article.id) ? "Selected" : "Not selected"
                     )
                     .accessibilityHint("Double tap to toggle selection")
+                    .articleListRowStyle()
                 } else {
-                    NavigationLink {
-                        ArticleDetailView(article: article)
+                    Button {
+                        navigationArticle = article
                     } label: {
                         ArticleRowView(article: article, showsFeedTitle: false)
                     }
+                    .buttonStyle(.plain)
                     .swipeActions(edge: .leading, allowsFullSwipe: true) {
                         readToggleButton(for: article)
                     }
@@ -118,10 +124,12 @@ struct FeedArticlesView: View {
                             }
                         }
                     }
+                    .articleListRowStyle()
                 }
             }
         }
         .listStyle(.plain)
+        .environment(\.defaultMinListRowHeight, 1)
         .refreshable {
             await feedStore.refreshAll(modelContext: modelContext)
         }

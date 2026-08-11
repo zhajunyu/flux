@@ -15,6 +15,7 @@ struct TimelineView: View {
     @Query private var feeds: [Feed]
 
     @State private var isEditing = false
+    @State private var navigationArticle: Article?
     @State private var selectedArticleIDs: Set<UUID> = []
 
     let onAddFeed: () -> Void
@@ -32,6 +33,9 @@ struct TimelineView: View {
             }
         }
         .navigationTitle("Timeline")
+        .navigationDestination(item: $navigationArticle) { article in
+            ArticleDetailView(article: article)
+        }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button(action: toggleEditing) {
@@ -90,12 +94,14 @@ struct TimelineView: View {
                         selectedArticleIDs.contains(article.id) ? "Selected" : "Not selected"
                     )
                     .accessibilityHint("Double tap to toggle selection")
+                    .articleListRowStyle()
                 } else {
-                    NavigationLink {
-                        ArticleDetailView(article: article)
+                    Button {
+                        navigationArticle = article
                     } label: {
                         ArticleRowView(article: article)
                     }
+                    .buttonStyle(.plain)
                     .swipeActions(edge: .leading, allowsFullSwipe: true) {
                         readToggleButton(for: article)
                     }
@@ -107,10 +113,12 @@ struct TimelineView: View {
                             }
                         }
                     }
+                    .articleListRowStyle()
                 }
             }
         }
         .listStyle(.plain)
+        .environment(\.defaultMinListRowHeight, 1)
         .refreshable {
             await feedStore.refreshAll(modelContext: modelContext)
         }
