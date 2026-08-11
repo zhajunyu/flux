@@ -47,7 +47,7 @@ struct FeedIconView: View {
     }
 
     private var placeholder: some View {
-        Image(systemName: "dot.radiowaves.left.and.right")
+        Image(systemName: "dot.radiowaves.up.forward")
             .font(.system(size: size * 0.42, weight: .semibold))
             .foregroundStyle(.tint)
     }

@@ -128,7 +128,7 @@ struct TimelineView: View {
         ContentUnavailableView {
             Label(
                 emptyStateTitle,
-                systemImage: feeds.isEmpty ? "dot.radiowaves.left.and.right" : "newspaper"
+                systemImage: feeds.isEmpty ? "dot.radiowaves.up.forward" : "newspaper"
             )
         } description: {
             Text(emptyStateDescription)

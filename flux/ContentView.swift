@@ -48,7 +48,7 @@ struct ContentView: View {
             }
             .badge(timelineUnreadCount)
 
-            Tab("Feeds", systemImage: "dot.radiowaves.left.and.right", value: .feeds) {
+            Tab("Feeds", systemImage: "dot.radiowaves.up.forward", value: .feeds) {
                 NavigationStack {
                     FeedManagementView(
                         onAddFeed: presentAddFeed,

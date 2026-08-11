@@ -110,7 +110,7 @@ struct FeedManagementView: View {
     private var addMenu: some View {
         Menu {
             Button(action: onAddFeed) {
-                Label("Add Feed", systemImage: "dot.radiowaves.left.and.right")
+                Label("Add Feed", systemImage: "dot.radiowaves.up.forward")
             }
 
             Button(action: onAddCategory) {
@@ -132,7 +132,7 @@ struct FeedManagementView: View {
 
     private var emptyState: some View {
         ContentUnavailableView {
-            Label("No Subscriptions", systemImage: "dot.radiowaves.left.and.right")
+            Label("No Subscriptions", systemImage: "dot.radiowaves.up.forward")
         } description: {
             Text("Add an RSS, Atom, or JSON feed, then organize it with your own categories.")
         } actions: {
@@ -148,7 +148,7 @@ struct FeedManagementView: View {
         List {
             if feeds.isEmpty {
                 ContentUnavailableView {
-                    Label("No Subscriptions", systemImage: "dot.radiowaves.left.and.right")
+                    Label("No Subscriptions", systemImage: "dot.radiowaves.up.forward")
                 } description: {
                     Text("Your categories are ready. Add a feed to start organizing subscriptions.")
                 } actions: {
@@ -221,7 +221,7 @@ struct FeedManagementView: View {
                 .onDrag {
                     NSItemProvider(object: feed.id.uuidString as NSString)
                 } preview: {
-                    Label(feed.title, systemImage: "dot.radiowaves.left.and.right")
+                    Label(feed.title, systemImage: "dot.radiowaves.up.forward")
                         .font(.headline)
                         .padding(12)
                         .background(.regularMaterial, in: .rect(cornerRadius: 12))
