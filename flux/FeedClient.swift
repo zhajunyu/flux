@@ -19,6 +19,7 @@ struct ParsedFeed: Sendable, Equatable {
 
     let title: String
     let sourceURL: URL
+    let websiteURL: URL?
     let iconURL: URL?
     let format: Format
     let fetchedAt: Date
@@ -27,6 +28,7 @@ struct ParsedFeed: Sendable, Equatable {
     init(
         title: String,
         sourceURL: URL,
+        websiteURL: URL? = nil,
         iconURL: URL? = nil,
         format: Format,
         fetchedAt: Date,
@@ -34,10 +36,23 @@ struct ParsedFeed: Sendable, Equatable {
     ) {
         self.title = title
         self.sourceURL = sourceURL
+        self.websiteURL = websiteURL
         self.iconURL = iconURL
         self.format = format
         self.fetchedAt = fetchedAt
         self.articles = articles
+    }
+
+    func replacingIconURL(with iconURL: URL?) -> ParsedFeed {
+        ParsedFeed(
+            title: title,
+            sourceURL: sourceURL,
+            websiteURL: websiteURL,
+            iconURL: iconURL,
+            format: format,
+            fetchedAt: fetchedAt,
+            articles: articles
+        )
     }
 }
 
@@ -77,9 +92,29 @@ struct FeedClient: Sendable {
         }
         let fetchedAt = Date()
 
-        return try await Task.detached(priority: .userInitiated) {
+        let parsedFeed = try await Task.detached(priority: .userInitiated) {
             try FeedDocumentParser.parse(data: data, sourceURL: finalURL, fetchedAt: fetchedAt)
         }.value
+
+        guard parsedFeed.iconURL == nil else { return parsedFeed }
+
+        let websiteURL = parsedFeed.websiteURL ?? URLNormalizer.originURL(from: finalURL)
+        let fallbackURL = URLNormalizer.faviconURL(
+            from: websiteURL?.absoluteString,
+            relativeTo: finalURL
+        )
+        guard let websiteURL else {
+            return parsedFeed.replacingIconURL(with: fallbackURL)
+        }
+
+        do {
+            let discoveredURL = try await FeedIconDiscovery.discoverIconURL(from: websiteURL)
+            return parsedFeed.replacingIconURL(with: discoveredURL ?? fallbackURL)
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            return parsedFeed.replacingIconURL(with: fallbackURL)
+        }
     }
 
     static let preview = FeedClient { url in
@@ -197,6 +232,102 @@ enum URLNormalizer {
         components.fragment = nil
         return components.url.flatMap(canonicalURL)
     }
+
+    static func originURL(from url: URL) -> URL? {
+        guard var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
+            return nil
+        }
+        components.path = "/"
+        components.query = nil
+        components.fragment = nil
+        return components.url.flatMap(canonicalURL)
+    }
+}
+
+enum FeedIconDiscovery {
+    private static let maximumHTMLSize = 2 * 1_024 * 1_024
+
+    static func discoverIconURL(from websiteURL: URL) async throws -> URL? {
+        var request = URLRequest(url: websiteURL)
+        request.timeoutInterval = 15
+        request.setValue(
+            "text/html, application/xhtml+xml;q=0.9, */*;q=0.5",
+            forHTTPHeaderField: "Accept"
+        )
+        request.setValue("Flux/1.0", forHTTPHeaderField: "User-Agent")
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let response = response as? HTTPURLResponse,
+              (200 ... 299).contains(response.statusCode),
+              response.expectedContentLength <= Int64(maximumHTMLSize),
+              !data.isEmpty,
+              data.count <= maximumHTMLSize else {
+            return nil
+        }
+
+        return iconURL(in: data, relativeTo: response.url ?? websiteURL)
+    }
+
+    static func iconURL(in data: Data, relativeTo baseURL: URL) -> URL? {
+        let html = String(decoding: data, as: UTF8.self)
+        guard let linkExpression = try? NSRegularExpression(
+            pattern: #"<link\b[^>]*>"#,
+            options: [.caseInsensitive]
+        ) else {
+            return nil
+        }
+
+        let range = NSRange(html.startIndex..<html.endIndex, in: html)
+        for match in linkExpression.matches(in: html, range: range) {
+            guard let tagRange = Range(match.range, in: html) else { continue }
+            let attributes = attributes(in: String(html[tagRange]))
+            guard let relation = attributes["rel"]?.lowercased() else { continue }
+            let relations = Set(relation.split(whereSeparator: \.isWhitespace).map(String.init))
+            guard relations.contains("icon")
+                    || relations.contains("apple-touch-icon")
+                    || relations.contains("apple-touch-icon-precomposed"),
+                  let href = attributes["href"] else {
+                continue
+            }
+
+            if let iconURL = URLNormalizer.resourceURL(
+                from: decodeHTMLEntities(in: href),
+                relativeTo: baseURL
+            ) {
+                return iconURL
+            }
+        }
+        return nil
+    }
+
+    private static func attributes(in tag: String) -> [String: String] {
+        guard let attributeExpression = try? NSRegularExpression(
+            pattern: #"([A-Za-z_:][A-Za-z0-9_:.-]*)\s*=\s*(?:\"([^\"]*)\"|'([^']*)'|([^\s>]+))"#
+        ) else {
+            return [:]
+        }
+
+        let range = NSRange(tag.startIndex..<tag.endIndex, in: tag)
+        return attributeExpression.matches(in: tag, range: range).reduce(into: [:]) { result, match in
+            guard let nameRange = Range(match.range(at: 1), in: tag) else { return }
+            let valueRange = (2 ... 4)
+                .map { match.range(at: $0) }
+                .first { $0.location != NSNotFound }
+                .flatMap { Range($0, in: tag) }
+            guard let valueRange else { return }
+            result[String(tag[nameRange]).lowercased()] = String(tag[valueRange])
+        }
+    }
+
+    private static func decodeHTMLEntities(in value: String) -> String {
+        value
+            .replacingOccurrences(of: "&quot;", with: "\"")
+            .replacingOccurrences(of: "&#39;", with: "'")
+            .replacingOccurrences(of: "&apos;", with: "'")
+            .replacingOccurrences(of: "&lt;", with: "<")
+            .replacingOccurrences(of: "&gt;", with: ">")
+            .replacingOccurrences(of: "&amp;", with: "&")
+    }
 }
 
 enum FeedDocumentParser {
@@ -223,10 +354,11 @@ enum FeedDocumentParser {
         let title = HTMLTextExtractor.singleLine(channel?.title)
             ?? sourceURL.host
             ?? "Untitled Feed"
+        let websiteURL = URLNormalizer.resourceURL(from: channel?.link, relativeTo: sourceURL)
         let iconURL = URLNormalizer.resourceURL(
             from: channel?.image?.url,
             relativeTo: sourceURL
-        ) ?? URLNormalizer.faviconURL(from: channel?.link, relativeTo: sourceURL)
+        )
         let articles = (channel?.items ?? []).compactMap { item -> ParsedArticle? in
             guard let link = URLNormalizer.articleLink(from: item.link, relativeTo: sourceURL) else {
                 return nil
@@ -243,6 +375,7 @@ enum FeedDocumentParser {
         return ParsedFeed(
             title: title,
             sourceURL: sourceURL,
+            websiteURL: websiteURL,
             iconURL: iconURL,
             format: .rss,
             fetchedAt: fetchedAt,
@@ -258,10 +391,11 @@ enum FeedDocumentParser {
             guard let relation = $0.attributes?.rel?.lowercased() else { return true }
             return relation == "alternate"
         })?.attributes?.href
+        let websiteURL = URLNormalizer.resourceURL(from: website, relativeTo: sourceURL)
         let iconURL = URLNormalizer.resourceURL(
             from: atom.icon ?? atom.logo,
             relativeTo: sourceURL
-        ) ?? URLNormalizer.faviconURL(from: website, relativeTo: sourceURL)
+        )
         let articles = (atom.entries ?? []).compactMap { entry -> ParsedArticle? in
             let preferredLink = entry.links?.first(where: {
                 guard let relation = $0.attributes?.rel?.lowercased() else { return true }
@@ -286,6 +420,7 @@ enum FeedDocumentParser {
         return ParsedFeed(
             title: title,
             sourceURL: sourceURL,
+            websiteURL: websiteURL,
             iconURL: iconURL,
             format: .atom,
             fetchedAt: fetchedAt,
@@ -297,10 +432,11 @@ enum FeedDocumentParser {
         let title = HTMLTextExtractor.singleLine(json.title)
             ?? sourceURL.host
             ?? "Untitled Feed"
+        let websiteURL = URLNormalizer.resourceURL(from: json.homePageURL, relativeTo: sourceURL)
         let iconURL = URLNormalizer.resourceURL(
             from: json.icon ?? json.favicon,
             relativeTo: sourceURL
-        ) ?? URLNormalizer.faviconURL(from: json.homePageURL, relativeTo: sourceURL)
+        )
         let articles = (json.items ?? []).compactMap { item -> ParsedArticle? in
             guard let link = URLNormalizer.articleLink(
                 from: item.url ?? item.externalURL,
@@ -320,6 +456,7 @@ enum FeedDocumentParser {
         return ParsedFeed(
             title: title,
             sourceURL: sourceURL,
+            websiteURL: websiteURL,
             iconURL: iconURL,
             format: .json,
             fetchedAt: fetchedAt,

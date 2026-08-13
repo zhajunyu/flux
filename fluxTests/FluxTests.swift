@@ -30,6 +30,59 @@ final class FluxTests: XCTestCase {
         XCTAssertNotNil(parsed.articles[0].publishedAt)
     }
 
+    func testRSSWithoutImageUsesWebsiteIconDeclaration() throws {
+        let sourceURL = try XCTUnwrap(URL(string: "https://sspai.com/feed"))
+        let feedData = Data(
+            """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <rss version="2.0">
+              <channel>
+                <title>少数派</title>
+                <link>https://sspai.com</link>
+                <description>Example feed without an RSS image.</description>
+              </channel>
+            </rss>
+            """.utf8
+        )
+        let parsed = try FeedDocumentParser.parse(data: feedData, sourceURL: sourceURL)
+
+        XCTAssertNil(parsed.iconURL)
+        XCTAssertEqual(parsed.websiteURL?.absoluteString, "https://sspai.com/")
+
+        let homepageData = Data(
+            """
+            <html><head>
+              <link rel="stylesheet" href="/styles.css">
+              <link href="https://cdn-static.sspai.com/favicon/sspai.ico" rel="shortcut icon">
+            </head></html>
+            """.utf8
+        )
+        let discoveredURL = FeedIconDiscovery.iconURL(
+            in: homepageData,
+            relativeTo: try XCTUnwrap(parsed.websiteURL)
+        )
+
+        XCTAssertEqual(
+            discoveredURL?.absoluteString,
+            "https://cdn-static.sspai.com/favicon/sspai.ico"
+        )
+    }
+
+    func testWebsiteIconDiscoveryResolvesRelativeHTMLAttribute() throws {
+        let homepageData = Data(
+            #"<link REL='apple-touch-icon' href='/icons/touch.png?x=1&amp;y=2'>"#.utf8
+        )
+        let discoveredURL = FeedIconDiscovery.iconURL(
+            in: homepageData,
+            relativeTo: try XCTUnwrap(URL(string: "https://example.com/articles/latest"))
+        )
+
+        XCTAssertEqual(
+            discoveredURL?.absoluteString,
+            "https://example.com/icons/touch.png?x=1&y=2"
+        )
+    }
+
     func testAtomAutoDetectionAndRelativeLinkResolution() throws {
         let parsed = try FeedDocumentParser.parse(
             data: fixtureData(named: "SampleAtom", extension: "xml"),
