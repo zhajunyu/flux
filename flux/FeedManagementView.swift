@@ -153,6 +153,16 @@ struct FeedManagementView: View {
             LazyVStack(spacing: 0) {
                 timelineRow
 
+                builtInHeader
+                    .padding(.top, 28)
+                    .padding(.bottom, 12)
+
+                LazyVStack(spacing: 8) {
+                    ForEach(BuiltInFeedItem.allCases) { item in
+                        builtInRow(item)
+                    }
+                }
+
                 if feeds.isEmpty && categories.isEmpty {
                     emptyState
                         .padding(.top, 32)
@@ -187,6 +197,33 @@ struct FeedManagementView: View {
         }
         .buttonStyle(.plain)
         .accessibilityHint("Opens articles from feeds shown in the timeline")
+    }
+
+    private var builtInHeader: some View {
+        HStack(spacing: 10) {
+            Text("Built-in")
+                .font(.caption2.weight(.bold))
+                .textCase(.uppercase)
+                .tracking(1.4)
+                .foregroundStyle(.secondary)
+                .accessibilityAddTraits(.isHeader)
+
+            Rectangle()
+                .fill(.quaternary)
+                .frame(height: 0.5)
+                .accessibilityHidden(true)
+        }
+        .padding(.horizontal, 4)
+    }
+
+    private func builtInRow(_ item: BuiltInFeedItem) -> some View {
+        NavigationLink {
+            BuiltInArticlesView(item: item)
+        } label: {
+            BuiltInFeedRow(item: item)
+        }
+        .buttonStyle(.plain)
+        .accessibilityHint("Opens \(item.title)")
     }
 
     private var libraryHeader: some View {
@@ -517,6 +554,36 @@ private enum FeedLibraryIcon {
     case folder
     case uncategorized
     case feed(URL?)
+}
+
+private struct BuiltInFeedRow: View {
+    let item: BuiltInFeedItem
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: item.systemImage)
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(item.tint)
+                .frame(width: 34, height: 34)
+                .background(item.tint.opacity(0.12), in: .rect(cornerRadius: 10))
+                .accessibilityHidden(true)
+
+            Text(item.title)
+                .font(.body.weight(.medium))
+
+            Spacer(minLength: 12)
+
+            Image(systemName: "chevron.forward")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.tertiary)
+                .accessibilityHidden(true)
+        }
+        .padding(.horizontal, 12)
+        .frame(minHeight: 54)
+        .background(Color(.secondarySystemGroupedBackground), in: .rect(cornerRadius: 14))
+        .contentShape(.rect)
+        .accessibilityElement(children: .combine)
+    }
 }
 
 private struct TimelineHeroRow: View {

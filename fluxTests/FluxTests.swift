@@ -325,6 +325,33 @@ final class FluxTests: XCTestCase {
         XCTAssertFalse(unselectedArticle.isRead)
     }
 
+    func testBuiltInArticleStatusesPersistIndependently() throws {
+        let (container, context) = try makeContainer()
+        _ = container
+        let article = Article(
+            title: "Saved article",
+            link: "https://example.com/saved",
+            publishedAt: Date(timeIntervalSince1970: 100)
+        )
+        context.insert(article)
+        try context.save()
+
+        let store = FeedStore(client: .preview)
+        store.toggleReadLater(article, modelContext: context)
+        store.toggleBookmark(article, modelContext: context)
+
+        XCTAssertTrue(article.isSavedForLater)
+        XCTAssertTrue(article.isBookmarked)
+        XCTAssertFalse(article.isStarred)
+
+        store.toggleStarred(article, modelContext: context)
+        store.toggleBookmark(article, modelContext: context)
+
+        XCTAssertTrue(article.isSavedForLater)
+        XCTAssertFalse(article.isBookmarked)
+        XCTAssertTrue(article.isStarred)
+    }
+
     func testPartialRefreshKeepsCachedArticlesAndReportsFailure() async throws {
         let (container, context) = try makeContainer()
         _ = container

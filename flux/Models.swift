@@ -69,6 +69,9 @@ final class Article {
     var link: String
     var publishedAt: Date
     var isRead: Bool
+    var isSavedForLater: Bool = false
+    var isBookmarked: Bool = false
+    var isStarred: Bool = false
     var feed: Feed?
 
     init(
@@ -78,6 +81,9 @@ final class Article {
         link: String,
         publishedAt: Date,
         isRead: Bool = false,
+        isSavedForLater: Bool = false,
+        isBookmarked: Bool = false,
+        isStarred: Bool = false,
         feed: Feed? = nil
     ) {
         self.id = id
@@ -86,6 +92,9 @@ final class Article {
         self.link = link
         self.publishedAt = publishedAt
         self.isRead = isRead
+        self.isSavedForLater = isSavedForLater
+        self.isBookmarked = isBookmarked
+        self.isStarred = isStarred
         self.feed = feed
     }
 

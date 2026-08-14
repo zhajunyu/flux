@@ -358,6 +358,33 @@ final class FeedStore {
         }
     }
 
+    func toggleReadLater(_ article: Article, modelContext: ModelContext) {
+        toggleArticleFlag(
+            \.isSavedForLater,
+            on: article,
+            failureMessage: "The Read Later status could not be saved.",
+            modelContext: modelContext
+        )
+    }
+
+    func toggleBookmark(_ article: Article, modelContext: ModelContext) {
+        toggleArticleFlag(
+            \.isBookmarked,
+            on: article,
+            failureMessage: "The bookmark status could not be saved.",
+            modelContext: modelContext
+        )
+    }
+
+    func toggleStarred(_ article: Article, modelContext: ModelContext) {
+        toggleArticleFlag(
+            \.isStarred,
+            on: article,
+            failureMessage: "The starred status could not be saved.",
+            modelContext: modelContext
+        )
+    }
+
     @discardableResult
     func createCategory(named name: String, modelContext: ModelContext) throws -> FeedCategory {
         let normalizedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -508,6 +535,24 @@ final class FeedStore {
             options: [.caseInsensitive, .diacriticInsensitive],
             locale: Locale(identifier: "en_US_POSIX")
         )
+    }
+
+    private func toggleArticleFlag(
+        _ keyPath: ReferenceWritableKeyPath<Article, Bool>,
+        on article: Article,
+        failureMessage: String,
+        modelContext: ModelContext
+    ) {
+        article[keyPath: keyPath].toggle()
+        do {
+            try modelContext.save()
+        } catch {
+            modelContext.rollback()
+            notice = UserNotice(
+                title: "Couldn’t Update Article",
+                message: failureMessage
+            )
+        }
     }
 
     private func containsFeed(with url: URL, modelContext: ModelContext) -> Bool {

@@ -42,14 +42,48 @@ struct ArticleDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
-                Button {
-                    feedStore.toggleRead(article, modelContext: modelContext)
+                Menu {
+                    Button {
+                        feedStore.toggleRead(article, modelContext: modelContext)
+                    } label: {
+                        Label(
+                            article.isRead ? "Mark Unread" : "Mark Read",
+                            systemImage: article.isRead ? "envelope.badge" : "envelope.open"
+                        )
+                    }
+
+                    Divider()
+
+                    Button {
+                        feedStore.toggleReadLater(article, modelContext: modelContext)
+                    } label: {
+                        Label(
+                            article.isSavedForLater ? "Remove from Read Later" : "Read Later",
+                            systemImage: article.isSavedForLater ? "clock.fill" : "clock"
+                        )
+                    }
+
+                    Button {
+                        feedStore.toggleBookmark(article, modelContext: modelContext)
+                    } label: {
+                        Label(
+                            article.isBookmarked ? "Remove Bookmark" : "Add to Bookmark",
+                            systemImage: article.isBookmarked ? "bookmark.fill" : "bookmark"
+                        )
+                    }
+
+                    Button {
+                        feedStore.toggleStarred(article, modelContext: modelContext)
+                    } label: {
+                        Label(
+                            article.isStarred ? "Unstar" : "Star",
+                            systemImage: article.isStarred ? "star.fill" : "star"
+                        )
+                    }
                 } label: {
-                    Label(
-                        article.isRead ? "Mark Unread" : "Mark Read",
-                        systemImage: article.isRead ? "envelope.badge" : "envelope.open"
-                    )
+                    Label("More", systemImage: "ellipsis")
                 }
+                .accessibilityHint("Shows article actions")
             }
         }
     }
