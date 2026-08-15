@@ -81,5 +81,9 @@ struct ContentView: View {
     ContentView()
         .environment(FeedStore(client: .preview))
         .environment(FeedIconCache())
-        .modelContainer(for: [Feed.self, FeedCategory.self, Article.self], inMemory: true)
+        .environment(ArticleContentStore())
+        .modelContainer(
+            for: [Feed.self, FeedCategory.self, Article.self, ArticleContentRecord.self],
+            inMemory: true
+        )
 }

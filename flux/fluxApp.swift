@@ -15,6 +15,7 @@ struct fluxApp: App {
             Feed.self,
             FeedCategory.self,
             Article.self,
+            ArticleContentRecord.self,
         ])
         let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
 
@@ -27,12 +28,14 @@ struct fluxApp: App {
 
     @State private var feedStore = FeedStore()
     @State private var feedIconCache = FeedIconCache()
+    @State private var articleContentStore = ArticleContentStore()
 
     var body: some Scene {
         WindowGroup {
             ContentView()
                 .environment(feedStore)
                 .environment(feedIconCache)
+                .environment(articleContentStore)
         }
         .modelContainer(sharedModelContainer)
     }

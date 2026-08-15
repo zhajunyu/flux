@@ -7,6 +7,7 @@
 
 import Foundation
 import SwiftData
+import WebKit
 import XCTest
 @testable import flux
 
@@ -140,44 +141,53 @@ final class FluxTests: XCTestCase {
         XCTAssertThrowsError(try URLNormalizer.feedURL(from: "   "))
     }
 
-    func testArticleWebNavigationPolicy() throws {
+    func testReaderNavigationPolicy() throws {
         XCTAssertEqual(
-            ArticleWebNavigationPolicy.destination(
-                for: try XCTUnwrap(URL(string: "https://example.com/article"))
+            ReaderNavigationPolicy.destination(
+                for: try XCTUnwrap(URL(string: "https://example.com/article")),
+                navigationType: .linkActivated
             ),
-            .webView
+            .external
         )
         XCTAssertEqual(
-            ArticleWebNavigationPolicy.destination(
-                for: try XCTUnwrap(URL(string: "http://example.com/article"))
-            ),
-            .webView
-        )
-        XCTAssertEqual(
-            ArticleWebNavigationPolicy.destination(
-                for: try XCTUnwrap(URL(string: "mailto:editor@example.com"))
-            ),
-            .externalApplication
-        )
-        XCTAssertEqual(
-            ArticleWebNavigationPolicy.destination(
-                for: try XCTUnwrap(URL(string: "tel:+15555550123"))
-            ),
-            .externalApplication
-        )
-        XCTAssertEqual(
-            ArticleWebNavigationPolicy.destination(
-                for: try XCTUnwrap(URL(string: "file:///tmp/article.html"))
+            ReaderNavigationPolicy.destination(
+                for: try XCTUnwrap(URL(string: "http://example.com/article")),
+                navigationType: .other
             ),
             .unsupported
         )
         XCTAssertEqual(
-            ArticleWebNavigationPolicy.destination(
-                for: try XCTUnwrap(URL(string: "example.com/article"))
+            ReaderNavigationPolicy.destination(
+                for: try XCTUnwrap(URL(string: "mailto:editor@example.com")),
+                navigationType: .linkActivated
+            ),
+            .external
+        )
+        XCTAssertEqual(
+            ReaderNavigationPolicy.destination(
+                for: try XCTUnwrap(URL(string: "tel:+15555550123")),
+                navigationType: .linkActivated
+            ),
+            .external
+        )
+        XCTAssertEqual(
+            ReaderNavigationPolicy.destination(
+                for: try XCTUnwrap(URL(string: "about:blank#section")),
+                navigationType: .linkActivated
+            ),
+            .document
+        )
+        XCTAssertEqual(
+            ReaderNavigationPolicy.destination(
+                for: try XCTUnwrap(URL(string: "file:///tmp/article.html")),
+                navigationType: .linkActivated
             ),
             .unsupported
         )
-        XCTAssertEqual(ArticleWebNavigationPolicy.destination(for: nil), .unsupported)
+        XCTAssertEqual(
+            ReaderNavigationPolicy.destination(for: nil, navigationType: .linkActivated),
+            .unsupported
+        )
     }
 
     func testSubscribeMergePreservesReadStateAndCascadeDelete() async throws {
@@ -748,7 +758,12 @@ final class FluxTests: XCTestCase {
     }
 
     private func makeContainer() throws -> (ModelContainer, ModelContext) {
-        let schema = Schema([Feed.self, FeedCategory.self, Article.self])
+        let schema = Schema([
+            Feed.self,
+            FeedCategory.self,
+            Article.self,
+            ArticleContentRecord.self,
+        ])
         let configuration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
         let container = try ModelContainer(for: schema, configurations: [configuration])
         return (container, ModelContext(container))

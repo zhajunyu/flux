@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Loading Article</title></head>
+<body>
+  <main id="root"><p>Preparing story…</p></main>
+  <script>
+    setTimeout(() => {
+      document.title = "A Delayed Dispatch";
+      document.getElementById("root").innerHTML = `
+        <article>
+          <h1>A Delayed Dispatch</h1>
+          <p>The article appeared after the application shell completed its first render. This mirrors pages that request their story data separately and then replace a loading placeholder with the actual document. Reader extraction needs to wait briefly instead of treating navigation completion as the end of rendering.</p>
+          <p>Once the data arrived, the page built ordinary semantic elements. The resulting paragraphs are no different from server-rendered markup, so a generic extraction algorithm can process them without selectors tailored to this particular fixture or publishing system.</p>
+          <p>A bounded readiness window protects both sides of the tradeoff. It gives normal client-rendered pages time to settle while ensuring a broken script or endless animation never holds the reader open forever.</p>
+          <p>The final result should contain this complete dispatch, proving that the extraction session observed the changing DOM and waited for stable, plausible article text before invoking Readability.</p>
+        </article>`;
+    }, 350);
+  </script>
+</body>
+</html>

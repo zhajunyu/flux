@@ -11,6 +11,7 @@ import SwiftUI
 enum AppPreferenceKey {
     static let appearance = "appearance"
     static let refreshFeedsOnLaunch = "refreshFeedsOnLaunch"
+    static let readerTextScale = "readerTextScale"
 }
 
 enum AppAppearance: String, CaseIterable, Identifiable {
@@ -140,5 +141,8 @@ struct SettingsView: View {
         SettingsView()
     }
     .environment(FeedStore(client: .preview))
-    .modelContainer(for: [Feed.self, FeedCategory.self, Article.self], inMemory: true)
+    .modelContainer(
+        for: [Feed.self, FeedCategory.self, Article.self, ArticleContentRecord.self],
+        inMemory: true
+    )
 }
