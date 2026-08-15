@@ -27,6 +27,8 @@ struct FeedManagementView: View {
 
     var body: some View {
         feedList
+        .navigationTitle("Flux")
+        .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
                 NavigationLink {
