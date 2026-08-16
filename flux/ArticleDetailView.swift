@@ -199,15 +199,16 @@ struct ArticleDetailView: View {
                 Text(article.title)
                     .font(.largeTitle.bold())
                     .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
 
-                HStack(spacing: 6) {
-                    Text(article.feed?.title ?? "Unknown Source")
-                    Text("•")
-                        .accessibilityHidden(true)
-                    Text(article.publishedAt, style: .date)
-                }
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
+                Text(
+                    "\(article.feed?.title ?? "Unknown Source") • "
+                        + article.publishedAt.formatted(date: .abbreviated, time: .omitted)
+                )
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
 
                 VStack(alignment: .leading, spacing: 12) {
                     ForEach([0.95, 0.82, 0.90, 0.68, 0.88, 0.76], id: \.self) { width in
@@ -215,17 +216,17 @@ struct ArticleDetailView: View {
                             .fill(.secondary.opacity(0.22))
                             .frame(maxWidth: .infinity)
                             .frame(height: 16)
-                            .containerRelativeFrame(.horizontal) { length, _ in
-                                length * width
-                            }
+                            .scaleEffect(x: width, anchor: .leading)
                     }
                 }
                 .padding(.top, 12)
                 .accessibilityHidden(true)
             }
-            .frame(maxWidth: 720, alignment: .leading)
             .padding(.horizontal, 22)
             .padding(.vertical, 30)
+            .containerRelativeFrame(.horizontal) { availableWidth, _ in
+                min(availableWidth, 720)
+            }
         }
         .overlay(alignment: .bottom) {
             ProgressView("Preparing Reader Mode…")
