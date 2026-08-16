@@ -67,6 +67,7 @@ struct ArticleDetailView: View {
                         openURL(url)
                     }
                 )
+                .ignoresSafeArea(edges: .bottom)
             case .unavailable(let failure):
                 unavailableView(failure, articleURL: articleURL)
             }
