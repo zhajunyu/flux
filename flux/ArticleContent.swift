@@ -54,6 +54,11 @@ enum ContentStatus: String, Codable, Sendable, CaseIterable {
     case paywalled
 }
 
+enum ArticleContentCacheVersion {
+    // Version 3 also uses SSPAI's referrer-free RSS image host.
+    static let current = 3
+}
+
 @Model
 final class ArticleContentRecord {
     @Attribute(.unique) var url: String
@@ -63,6 +68,7 @@ final class ArticleContentRecord {
     var lastAttemptedAt: Date?
     var failureCode: String?
     var failureMessage: String?
+    var extractionVersion: Int = 0
 
     init(
         url: String,
@@ -71,7 +77,8 @@ final class ArticleContentRecord {
         fetchedAt: Date? = nil,
         lastAttemptedAt: Date? = nil,
         failureCode: String? = nil,
-        failureMessage: String? = nil
+        failureMessage: String? = nil,
+        extractionVersion: Int = 0
     ) {
         self.url = url
         statusRawValue = status.rawValue
@@ -80,6 +87,7 @@ final class ArticleContentRecord {
         self.lastAttemptedAt = lastAttemptedAt
         self.failureCode = failureCode
         self.failureMessage = failureMessage
+        self.extractionVersion = extractionVersion
     }
 
     var status: ContentStatus {

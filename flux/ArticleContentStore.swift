@@ -81,6 +81,7 @@ final class ArticleContentStore {
                         content: content,
                         fetchedAt: fetchedAt,
                         isStale: now().timeIntervalSince(fetchedAt) >= freshnessInterval
+                            || record.extractionVersion < ArticleContentCacheVersion.current
                     )
                 )
             } catch {
@@ -89,6 +90,7 @@ final class ArticleContentStore {
                 record.fetchedAt = nil
                 record.failureCode = nil
                 record.failureMessage = nil
+                record.extractionVersion = 0
                 try save(modelContext)
                 return .missing
             }
@@ -139,6 +141,7 @@ final class ArticleContentStore {
             record.status = .available
             record.failureCode = nil
             record.failureMessage = nil
+            record.extractionVersion = ArticleContentCacheVersion.current
             try save(modelContext)
             return content
         } catch is CancellationError {
@@ -180,6 +183,7 @@ final class ArticleContentStore {
             record.status = error.contentStatus
             record.contentData = nil
             record.fetchedAt = nil
+            record.extractionVersion = 0
         }
     }
 
@@ -235,6 +239,7 @@ private struct RecordSnapshot {
     let lastAttemptedAt: Date?
     let failureCode: String?
     let failureMessage: String?
+    let extractionVersion: Int
 
     init(record: ArticleContentRecord) {
         status = record.status
@@ -243,6 +248,7 @@ private struct RecordSnapshot {
         lastAttemptedAt = record.lastAttemptedAt
         failureCode = record.failureCode
         failureMessage = record.failureMessage
+        extractionVersion = record.extractionVersion
     }
 
     func restore(_ record: ArticleContentRecord) {
@@ -252,5 +258,6 @@ private struct RecordSnapshot {
         record.lastAttemptedAt = lastAttemptedAt
         record.failureCode = failureCode
         record.failureMessage = failureMessage
+        record.extractionVersion = extractionVersion
     }
 }

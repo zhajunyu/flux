@@ -71,6 +71,13 @@ final class ArticleReaderTests: XCTestCase {
         XCTAssertTrue(html.contains("<code"))
         XCTAssertTrue(html.contains("<table"))
         XCTAssertTrue(html.contains("https://example.com/articles/images/night-harbor.jpg"))
+        XCTAssertTrue(html.contains("https://example.com/articles/images/lazy-original.jpg"))
+        XCTAssertTrue(html.contains("https://example.com/articles/images/srcset-large.jpg"))
+        XCTAssertTrue(html.contains("https://example.com/articles/images/picture-night.webp"))
+        XCTAssertTrue(html.contains("https://example.com/articles/images/noscript-night.jpg"))
+        XCTAssertTrue(html.contains("https://rssfile.sspai.com/2026/08/14/4d19bce856d03c674a994f6dadf005c7.png"))
+        XCTAssertFalse(html.contains("https://cdnfile.sspai.com/"))
+        XCTAssertFalse(html.contains("data:image/gif;base64"))
         XCTAssertTrue(html.contains("loading=\"lazy\""))
         XCTAssertTrue(html.contains("referrerpolicy=\"no-referrer\""))
     }
@@ -212,6 +219,26 @@ final class ArticleReaderTests: XCTestCase {
         }
         XCTAssertEqual(content.title, "Fresh")
         XCTAssertFalse(isRefreshing)
+    }
+
+    func testLegacyImageExtractionCacheIsMarkedStale() throws {
+        let (_, context) = try makeContainer()
+        try insertRecord(
+            sampleContent(title: "Legacy images"),
+            status: .available,
+            fetchedAt: Date(),
+            extractionVersion: ArticleContentCacheVersion.current - 1,
+            into: context
+        )
+        let store = ArticleContentStore(extractor: ScriptedArticleExtractor([]))
+
+        guard case .available(let cached) = try store.lookup(
+            for: baseURL,
+            modelContext: context
+        ) else {
+            return XCTFail("Expected cached content")
+        }
+        XCTAssertTrue(cached.isStale)
     }
 
     func testStaleCacheDisplaysImmediatelyThenRefreshes() async throws {
@@ -459,13 +486,15 @@ final class ArticleReaderTests: XCTestCase {
         _ content: ArticleContent,
         status: ContentStatus,
         fetchedAt: Date,
+        extractionVersion: Int = ArticleContentCacheVersion.current,
         into context: ModelContext
     ) throws {
         let record = ArticleContentRecord(
             url: URLNormalizer.canonicalString(baseURL)!,
             status: status,
             contentData: try JSONEncoder().encode(content),
-            fetchedAt: fetchedAt
+            fetchedAt: fetchedAt,
+            extractionVersion: extractionVersion
         )
         context.insert(record)
         try context.save()

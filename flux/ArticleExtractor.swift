@@ -512,6 +512,26 @@ private final class ArticleWebExtractionSession: NSObject, WKNavigationDelegate 
       const chromePattern = /(^|[\s_-])(ad|ads|advert|advertisement|banner|cookie|comment|comments|newsletter|promo|recommendation|recommendations|recommended|related|share|sharing|social|signup|subscribe)([\s_-]|$)/i;
 
       const readabilityDocument = document.cloneNode(true);
+      readabilityDocument.querySelectorAll("noscript").forEach(noscript => {
+        const markup = noscript.textContent || noscript.innerHTML || "";
+        if (!/<(?:img|picture)\b/i.test(markup)) return;
+
+        const wrapper = readabilityDocument.createElement("div");
+        wrapper.innerHTML = markup;
+        if (!wrapper.querySelector("img, picture")) return;
+
+        const previous = noscript.previousElementSibling;
+        if (previous) {
+          const previousMedia = previous.matches("img, picture")
+            ? [previous]
+            : Array.from(previous.querySelectorAll("img, picture"));
+          const containsOnlyMedia = previousMedia.length === 1
+            && !(previous.textContent || "").trim();
+          if (containsOnlyMedia) previous.remove();
+        }
+
+        noscript.replaceWith(...Array.from(wrapper.childNodes));
+      });
       readabilityDocument.querySelectorAll(
         'script, style, noscript, form, input, button, select, textarea, iframe, frame, embed, object, nav, aside, [role="navigation"], [role="banner"], [role="dialog"], [aria-modal="true"]'
       ).forEach(node => node.remove());
@@ -555,13 +575,20 @@ private final class ArticleWebExtractionSession: NSObject, WKNavigationDelegate 
         const candidate = normalize(value, 10000);
         if (!candidate) return null;
         if (kind === "link" && candidate.startsWith("#")) return candidate;
-        if (kind === "image" && /^data:image\/(png|jpeg|gif|webp);base64,/i.test(candidate)) {
+        if (kind === "image" && /^data:image\/(png|jpeg|gif|webp|avif);base64,/i.test(candidate)) {
           return candidate;
         }
         try {
           const url = new URL(candidate, document.baseURI);
           const schemes = kind === "link" ? new Set(["http:", "https:", "mailto:", "tel:"]) : new Set(["http:", "https:"]);
-          return schemes.has(url.protocol) ? url.href : null;
+          if (!schemes.has(url.protocol)) return null;
+
+          // SSPAI's article CDN rejects the reader's intentional no-referrer requests.
+          // The publisher exposes the same assets through rssfile.sspai.com for RSS clients.
+          if (kind === "image" && url.hostname.toLowerCase() === "cdnfile.sspai.com") {
+            url.hostname = "rssfile.sspai.com";
+          }
+          return url.href;
         } catch (_) {
           return null;
         }
@@ -573,46 +600,109 @@ private final class ArticleWebExtractionSession: NSObject, WKNavigationDelegate 
         else link.removeAttribute("href");
       });
 
-      const normalizeSourceSet = value => {
+      const parseSourceSet = value => {
         if (!value) return null;
-        const candidates = value.split(",").map(candidate => {
+        const candidates = value.split(",").map((candidate, index) => {
           const parts = candidate.trim().split(/\s+/);
           const url = safeURL(parts.shift(), "image");
-          return url ? [url, ...parts].join(" ") : null;
+          if (!url) return null;
+
+          const descriptor = parts.length === 1 && /^\d+(?:\.\d+)?[wx]$/.test(parts[0])
+            ? parts[0]
+            : null;
+          const numericDescriptor = descriptor ? Number.parseFloat(descriptor) : 1;
+          const rank = descriptor?.endsWith("x")
+            ? numericDescriptor * 10000
+            : numericDescriptor;
+          return { url, descriptor, rank, index };
         }).filter(Boolean);
-        return candidates.length ? candidates.join(", ") : null;
+        if (!candidates.length) return null;
+
+        const fallback = candidates.reduce((best, candidate) => {
+          if (candidate.rank > best.rank) return candidate;
+          if (candidate.rank === best.rank && candidate.index > best.index) return candidate;
+          return best;
+        });
+        return {
+          value: candidates
+            .map(candidate => candidate.descriptor ? `${candidate.url} ${candidate.descriptor}` : candidate.url)
+            .join(", "),
+          fallback: fallback.url
+        };
       };
+
+      const firstSafeAttribute = (element, attributes, kind = "image") => {
+        for (const attribute of attributes) {
+          const value = safeURL(element.getAttribute(attribute), kind);
+          if (value) return value;
+        }
+        return null;
+      };
+
+      const firstSourceSet = (element, attributes) => {
+        for (const attribute of attributes) {
+          const value = parseSourceSet(element.getAttribute(attribute));
+          if (value) return value;
+        }
+        return null;
+      };
+
+      const lazySourceAttributes = [
+        "data-src", "data-original", "data-original-src", "data-lazy-src", "data-lazy",
+        "data-url", "data-image", "data-hi-res-src", "data-full-src", "data-actualsrc",
+        "data-defer-src"
+      ];
+      const sourceSetAttributes = [
+        "data-srcset", "data-lazy-srcset", "data-original-srcset", "srcset"
+      ];
+      const isLikelyPlaceholder = value => {
+        if (!value) return false;
+        if (/^data:image\//i.test(value) && value.length < 200) return true;
+        return /(?:^|[\/_.-])(spacer|transparent|blank|pixel)(?:[\/_.-]|$)/i.test(value);
+      };
+
+      root.querySelectorAll("source").forEach(source => {
+        const sourceSet = firstSourceSet(source, sourceSetAttributes);
+        if (sourceSet) source.setAttribute("srcset", sourceSet.value);
+        else source.remove();
+      });
 
       root.querySelectorAll("img").forEach(image => {
         const marker = [image.id, image.className, image.alt].filter(Boolean).join(" ");
         const width = Number.parseInt(image.getAttribute("width"), 10);
         const height = Number.parseInt(image.getAttribute("height"), 10);
-        if (chromePattern.test(marker) || (width > 0 && width <= 2) || (height > 0 && height <= 2)) {
+        const isTrackingSized = width > 0 && width <= 2 && height > 0 && height <= 2;
+        if (chromePattern.test(marker) || isTrackingSized) {
           image.remove();
           return;
         }
 
-        const source = ["src", "data-src", "data-original", "data-lazy-src", "data-url"]
-          .map(attribute => image.getAttribute(attribute))
-          .find(Boolean);
-        const src = safeURL(source, "image");
+        const lazySource = firstSafeAttribute(image, lazySourceAttributes);
+        const regularSource = safeURL(image.getAttribute("src"), "image");
+        const sourceSet = firstSourceSet(image, sourceSetAttributes);
+        const pictureSourceSets = image.closest("picture")
+          ? Array.from(image.closest("picture").querySelectorAll("source"))
+              .map(source => firstSourceSet(source, ["srcset"]))
+              .filter(Boolean)
+          : [];
+        const pictureFallback = pictureSourceSets.length
+          ? pictureSourceSets[pictureSourceSets.length - 1].fallback
+          : null;
+        const alternativeSource = lazySource || sourceSet?.fallback || pictureFallback;
+        const src = lazySource
+          || (isLikelyPlaceholder(regularSource) && alternativeSource ? alternativeSource : regularSource)
+          || sourceSet?.fallback
+          || pictureFallback;
         if (!src) {
           image.remove();
           return;
         }
         image.setAttribute("src", src);
-        const srcset = normalizeSourceSet(image.getAttribute("srcset") || image.getAttribute("data-srcset"));
-        if (srcset) image.setAttribute("srcset", srcset);
+        if (sourceSet) image.setAttribute("srcset", sourceSet.value);
         else image.removeAttribute("srcset");
         image.setAttribute("loading", "lazy");
         image.setAttribute("decoding", "async");
         image.setAttribute("referrerpolicy", "no-referrer");
-      });
-
-      root.querySelectorAll("source").forEach(source => {
-        const srcset = normalizeSourceSet(source.getAttribute("srcset") || source.getAttribute("data-srcset"));
-        if (srcset) source.setAttribute("srcset", srcset);
-        else source.remove();
       });
 
       const allowedTags = [
@@ -625,7 +715,7 @@ private final class ArticleWebExtractionSession: NSObject, WKNavigationDelegate 
       ];
       const allowedAttributes = [
         "alt", "colspan", "datetime", "decoding", "dir", "height", "href", "lang", "loading",
-        "open", "referrerpolicy", "rowspan", "scope", "sizes", "src", "srcset", "title", "width"
+        "media", "open", "referrerpolicy", "rowspan", "scope", "sizes", "src", "srcset", "title", "type", "width"
       ];
 
       const cleanHTML = DOMPurify.sanitize(root, {
@@ -646,9 +736,26 @@ private final class ArticleWebExtractionSession: NSObject, WKNavigationDelegate 
         else link.removeAttribute("href");
       });
       cleanRoot.querySelectorAll("img").forEach(image => {
-        const src = safeURL(image.getAttribute("src"), "image");
+        let src = safeURL(image.getAttribute("src"), "image");
+        const sourceSet = parseSourceSet(image.getAttribute("srcset"));
+        if (sourceSet) image.setAttribute("srcset", sourceSet.value);
+        else image.removeAttribute("srcset");
+        if (!src) src = sourceSet?.fallback || null;
+        if (!src && image.closest("picture")) {
+          const pictureSourceSets = Array.from(image.closest("picture").querySelectorAll("source"))
+            .map(source => parseSourceSet(source.getAttribute("srcset")))
+            .filter(Boolean);
+          src = pictureSourceSets.length
+            ? pictureSourceSets[pictureSourceSets.length - 1].fallback
+            : null;
+        }
         if (src) image.setAttribute("src", src);
         else image.remove();
+      });
+      cleanRoot.querySelectorAll("source").forEach(source => {
+        const sourceSet = parseSourceSet(source.getAttribute("srcset"));
+        if (sourceSet) source.setAttribute("srcset", sourceSet.value);
+        else source.remove();
       });
 
       const container = document.createElement("div");
